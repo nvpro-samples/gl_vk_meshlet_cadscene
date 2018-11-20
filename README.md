@@ -207,7 +207,7 @@ You may achieve greater gains by custom packing of vertex and index data and fur
 
 ### Task Shader Overhead
 
-Whenever there is multiple stages evolved, the hardware has to load balance creating warps for the different stages. When there is very little work per drawcall, adding more stages at the top can impact performance negatively. As a result we only use the task shader where there were more than 16 meshlets per drawcall (empiric threshold).
+Whenever there is multiple stages evolved, the hardware has to load balance creating warps for the different stages. When there is very little work per drawcall, adding more stages at the top can impact performance negatively on current hardware. As a result we only use the task shader where there were more than 16 meshlets per drawcall (empiric threshold).
 
 The other option (not yet used in this sample) is to batch drawcalls with few meshlets into bigger drawcalls, so that the task shader stage becomes more effective again. Task shaders can serve as alternative to instancing/multi-draw-indirect as they can dispatch mesh shaders in a distributed matter.
 
@@ -217,7 +217,7 @@ We can easily batch 32 small drawcalls into a single drawcall by summing the tas
 
 ```` cpp
 // batchWorkGroupSizesInclusive[] contains inclusive add over all task counts
-// in the batched drawcalls (up to 32). It's also provided as SSBO.
+// in the batched drawcalls (up to 32). This array is also provided as SSBO.
 // Launch total sum of batched draws.
 glUniform1ui(0, numBatchedDraws);
 glDrawMeshTasksNV(0, batchDrawCountsInclusive[numBatchedDraws-1]);
@@ -264,3 +264,8 @@ At the cost of some additional latency you can extend this to a total of `32 * 3
 Make sure to have installed the [Vulkan-SDK](http://lunarg.com/vulkan-sdk/) (1.1.85.0 or higher). Always use 64-bit build configurations.
 
 Ideally clone this and other interesting [nvpro-samples](https://github.com/nvpro-samples) repositories into a common subdirectory. You will always need [shared_sources](https://github.com/nvpro-samples/shared_sources) and on Windows [shared_external](https://github.com/nvpro-samples/shared_external). The shared directories are searched either as subdirectory of the sample or one directory up.
+
+CMake will also download the required model files (`.csf.gz`) hosted on nividia.com.
+
+## Running
+Pass one of the `*_meshlet.cfg` files as commandline argument (full path) as startup argument.
