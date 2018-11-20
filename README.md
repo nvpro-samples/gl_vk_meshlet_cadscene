@@ -265,7 +265,7 @@ Make sure to have installed the [Vulkan-SDK](http://lunarg.com/vulkan-sdk/) (1.1
 
 Ideally clone this and other interesting [nvpro-samples](https://github.com/nvpro-samples) repositories into a common subdirectory. You will always need [shared_sources](https://github.com/nvpro-samples/shared_sources) and on Windows [shared_external](https://github.com/nvpro-samples/shared_external). The shared directories are searched either as subdirectory of the sample or one directory up.
 
-CMake will also download the required model files (`.csf.gz`) hosted on nividia.com.
+CMake will also download the required model files (`.csf.gz`) hosted on nvidia.com.
 
 ## Running
 Pass one of the `*_meshlet.cfg` files as commandline argument (full path) as startup argument.
