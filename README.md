@@ -211,7 +211,7 @@ Whenever there is multiple stages evolved, the hardware has to load balance crea
 
 The other option (not yet used in this sample) is to batch drawcalls with few meshlets into bigger drawcalls, so that the task shader stage becomes more effective again. Task shaders can serve as alternative to instancing/multi-draw-indirect as they can dispatch mesh shaders in a distributed matter.
 
-Especially in models with many small objects, such a technique is highly recommeded (e.g. low-complexity furniture/properties in architecural visualization, nuts and bolts, guardrails etc.)
+Especially in models with many small objects, such a technique is highly recommeded (e.g. low-complexity furniture/properties in architectural visualization, nuts and bolts, guardrails etc.)
 
 We can easily batch 32 small drawcalls into a single drawcall by summing the task counts over all batched drawcalls.
 
