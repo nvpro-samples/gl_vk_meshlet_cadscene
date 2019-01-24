@@ -40,6 +40,7 @@
 #if IS_VULKAN
   // one of them provides uint8_t
   #extension GL_KHX_shader_explicit_arithmetic_types_int8 : enable
+  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
   #extension GL_NV_gpu_shader5 : enable
     
   #extension GL_KHR_shader_subgroup_basic : require
