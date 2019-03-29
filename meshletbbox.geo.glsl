@@ -97,8 +97,6 @@ void main()
   
   if (IN[0].meshletID == ~0u) return;
 
-  meshletID = IN[0].meshletID;
-  
   mat4 worldTM  = object.worldMatrix;
   vec3 worldCtr = (worldTM * vec4(IN[0].bboxCtr, 1)).xyz;
   
@@ -150,10 +148,11 @@ void main()
   #endif
   {
     // cone triangle
-    
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr, 1);
     EmitVertex();
     
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + (edgeBasis0) * 0.1,1);
     EmitVertex();
     
@@ -161,9 +160,11 @@ void main()
     float len = (length(faceNormal) + length(edgeBasis0) + length(edgeBasis1)) / 3.0;
     len *= IN[0].coneAngle > 0 ? 0.01 : 1.0;
     
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + worldDir * len,1);
     EmitVertex();
     
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + (edgeBasis1) * 0.1,1);
     EmitVertex();
   }
@@ -172,16 +173,20 @@ void main()
   #if SHOW_NORMAL
   else
   #endif
-  {  
+  {
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + (faceNormal - edgeBasis0 - edgeBasis1),1);
     EmitVertex();
     
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + (faceNormal + edgeBasis0 - edgeBasis1),1);
     EmitVertex();
     
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + (faceNormal - edgeBasis0 + edgeBasis1),1);
     EmitVertex();
     
+    meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr + (faceNormal + edgeBasis0 + edgeBasis1),1);
     EmitVertex();
   }
