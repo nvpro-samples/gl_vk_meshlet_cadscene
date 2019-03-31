@@ -336,14 +336,16 @@ namespace meshlettest {
       {
         // REGULAR
         DrawSetup &setup = m_setupRegular;
+        setup.container.init(m_device, m_allocator);
+
         auto& bindingsScene = setup.container.descriptorBindings[DSET_SCENE];
         // UBO SCENE
         bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT));
-        setup.container.initSetLayout(m_device, DSET_SCENE);
+        setup.container.initSetLayout(DSET_SCENE);
         // UBO OBJECT
         auto& bindingsObject = setup.container.descriptorBindings[DSET_OBJECT];
         bindingsObject.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT));
-        setup.container.initSetLayout(m_device, DSET_OBJECT);
+        setup.container.initSetLayout(DSET_OBJECT);
 
         setup.container.pipelineLayouts[0] = createPipelineLayout(2, setup.container.descriptorSetLayout);
       }
@@ -351,14 +353,15 @@ namespace meshlettest {
       {
         // BBOX
         DrawSetup &setup = m_setupBbox;
+        setup.container.init(m_device, m_allocator);
         // UBO SCENE
         auto& bindingsScene = setup.container.descriptorBindings[DSET_SCENE];
         bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT));
-        setup.container.initSetLayout(m_device, DSET_SCENE);
+        setup.container.initSetLayout(DSET_SCENE);
         // UBO OBJECT
         auto& bindingsObject = setup.container.descriptorBindings[DSET_OBJECT];
         bindingsObject.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT));
-        setup.container.initSetLayout(m_device, DSET_OBJECT);
+        setup.container.initSetLayout(DSET_OBJECT);
         // UBO GEOMETRY
         auto& bindingsGeometry = setup.container.descriptorBindings[DSET_GEOMETRY];
         bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_SSBO_MESHLETDESC));
@@ -367,7 +370,7 @@ namespace meshlettest {
         bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_TEX_VBO));
         bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_TEX_ABO));
         
-        setup.container.initSetLayout(m_device, DSET_GEOMETRY);
+        setup.container.initSetLayout(DSET_GEOMETRY);
 
       #if USE_PER_GEOMETRY_VIEWS
         setup.container.pipelineLayouts[0] = createPipelineLayout(3, setup.container.descriptorSetLayout);
@@ -388,15 +391,16 @@ namespace meshlettest {
         {
           // TASK
           DrawSetup &setup = m_setupMeshTask;
+          setup.container.init(m_device, m_allocator);
           // UBO SCENE
           auto& bindingsScene = setup.container.descriptorBindings[DSET_SCENE];
           bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, SCENE_UBO_VIEW));
           bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageTask | stageMesh, SCENE_SSBO_STATS));
-          setup.container.initSetLayout(m_device, DSET_SCENE);
+          setup.container.initSetLayout(DSET_SCENE);
           // UBO OBJECT
           auto& bindingsObject = setup.container.descriptorBindings[DSET_OBJECT];
           bindingsObject.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT));
-          setup.container.initSetLayout(m_device, DSET_OBJECT);
+          setup.container.initSetLayout(DSET_OBJECT);
           // UBO GEOMETRY
           auto& bindingsGeometry = setup.container.descriptorBindings[DSET_GEOMETRY];
           bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageTask | stageMesh, GEOMETRY_SSBO_MESHLETDESC));
@@ -404,7 +408,7 @@ namespace meshlettest {
           bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, stageMesh, GEOMETRY_TEX_IBO));
           bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, stageMesh, GEOMETRY_TEX_VBO));
           bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, stageMesh, GEOMETRY_TEX_ABO));
-          setup.container.initSetLayout(m_device, DSET_GEOMETRY);
+          setup.container.initSetLayout(DSET_GEOMETRY);
 
           VkPushConstantRange ranges[2];
           ranges[0].offset = (USE_PER_GEOMETRY_VIEWS ? 0 : sizeof(uint32_t) * 4);
@@ -456,11 +460,11 @@ namespace meshlettest {
     vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, NULL);
     vkDestroyRenderPass(m_device, m_framebuffer.passUI, NULL);
 
-    m_setupRegular.container.deinitLayouts(m_device, m_allocator);
-    m_setupBbox.container.deinitLayouts(m_device, m_allocator);
+    m_setupRegular.container.deinitLayouts();
+    m_setupBbox.container.deinitLayouts();
 
     if (m_nativeMeshSupport) {
-      m_setupMeshTask.container.deinitLayouts(m_device, m_allocator);
+      m_setupMeshTask.container.deinitLayouts();
     }
   
   m_memAllocator.deinit();
@@ -1507,17 +1511,17 @@ namespace meshlettest {
       // Allocation phase
       
       {
-        m_setupRegular.container.initPoolAndSets(m_device, 1, DSET_SCENE, m_allocator);
-        m_setupRegular.container.initPoolAndSets(m_device, 1, DSET_OBJECT, m_allocator);
+        m_setupRegular.container.initPoolAndSets(DSET_SCENE, 1);
+        m_setupRegular.container.initPoolAndSets(DSET_OBJECT, 1);
 
-        m_setupBbox.container.initPoolAndSets(m_device, 1, DSET_SCENE, m_allocator);
-        m_setupBbox.container.initPoolAndSets(m_device, 1, DSET_OBJECT, m_allocator);
-        m_setupBbox.container.initPoolAndSets(m_device, geometryBindings, DSET_GEOMETRY, m_allocator);
+        m_setupBbox.container.initPoolAndSets(DSET_SCENE, 1);
+        m_setupBbox.container.initPoolAndSets(DSET_OBJECT, 1);
+        m_setupBbox.container.initPoolAndSets(DSET_GEOMETRY, geometryBindings);
       }
       if (m_nativeMeshSupport) {
-        m_setupMeshTask.container.initPoolAndSets(m_device, 1, DSET_SCENE, m_allocator);
-        m_setupMeshTask.container.initPoolAndSets(m_device, 1, DSET_OBJECT, m_allocator);
-        m_setupMeshTask.container.initPoolAndSets(m_device, geometryBindings, DSET_GEOMETRY, m_allocator);
+        m_setupMeshTask.container.initPoolAndSets(DSET_SCENE, 1);
+        m_setupMeshTask.container.initPoolAndSets(DSET_OBJECT, 1);
+        m_setupMeshTask.container.initPoolAndSets(DSET_GEOMETRY, geometryBindings);
       }
     }
 
@@ -1626,11 +1630,11 @@ namespace meshlettest {
 
     m_scene.deinit();
 
-    m_setupRegular.container.deinitPools(m_device, m_allocator);
-    m_setupBbox.container.deinitPools(m_device, m_allocator);
+    m_setupRegular.container.deinitPools();
+    m_setupBbox.container.deinitPools();
 
     if (m_nativeMeshSupport) {
-      m_setupMeshTask.container.deinitPools(m_device, m_allocator);
+      m_setupMeshTask.container.deinitPools();
     }
   }
 
