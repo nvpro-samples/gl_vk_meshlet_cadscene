@@ -27,15 +27,14 @@
 
 #include <assert.h>
 #include <algorithm>
-#include <main.h>
 
-#include <nv_math/nv_math_glsltypes.h>
+#include <nvmath/nvmath_glsltypes.h>
 
 #include "renderer.hpp"
 #include "resources_gl.hpp"
 #include "nvmeshlet_builder.hpp"
 
-using namespace nv_math;
+using namespace nvmath;
 #include "common.h"
 
 namespace meshlettest
@@ -102,7 +101,7 @@ namespace meshlettest
 
     bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) override;
     void deinit() override;
-    void draw(const FrameConfig& global, nv_helpers::Profiler& profiler) override;
+    void draw(const FrameConfig& global) override;
 
     bool m_bindless = false;
 
@@ -130,10 +129,12 @@ namespace meshlettest
 
   }
 
-  void RendererMeshGL::draw(const FrameConfig& global, nv_helpers::Profiler& profiler)
+  void RendererMeshGL::draw(const FrameConfig& global)
   {
     const CadScene* NV_RESTRICT scene = m_list->m_scene;
-    const ResourcesGL* NV_RESTRICT res = m_resources;
+    ResourcesGL* NV_RESTRICT res = m_resources;
+
+    const nvgl::ProfilerGL::Section profile(res->m_profilerGL, "Render");
 
     bool bindless = m_bindless;
     size_t vertexSize = scene->getVertexSize();

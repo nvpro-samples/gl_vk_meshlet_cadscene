@@ -30,7 +30,7 @@
 #define RENDERER_H__
 
 #include "resources.hpp"
-#include <nv_helpers/profiler.hpp>
+#include <nvh/profiler.hpp>
 
 namespace meshlettest {
 
@@ -100,7 +100,7 @@ namespace meshlettest {
   public:
     virtual bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) = 0;
     virtual void deinit() = 0;
-    virtual void draw(const FrameConfig& global, nv_helpers::Profiler& profiler) = 0;
+    virtual void draw(const FrameConfig& global) = 0;
 
     virtual ~Renderer() {}
     

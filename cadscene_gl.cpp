@@ -28,11 +28,11 @@
 
 #include "cadscene_gl.hpp"
 #include "nvmeshlet_builder.hpp"
-#include <nv_helpers/nvprint.hpp>
-#include <nv_helpers_gl/glsltypes_gl.hpp>
+#include <nvh/nvprint.hpp>
+#include <nvgl/glsltypes_gl.hpp>
 #include <inttypes.h>
 
-using namespace nv_math;
+using namespace nvmath;
 #include "common.h"
 
 
@@ -255,9 +255,9 @@ void CadSceneGL::init(const CadScene& cadscene)
     glNamedBufferSubData(chunk.aboGL, geom.mem.aboOffset, cadgeom.aboSize, cadgeom.aboData);
     glNamedBufferSubData(chunk.iboGL, geom.mem.iboOffset, cadgeom.iboSize, cadgeom.iboData);
 
-    geom.vbo = nv_helpers_gl::GLBufferBinding(chunk.vboGL, geom.mem.vboOffset, cadgeom.vboSize, chunk.vboADDR);
-    geom.abo = nv_helpers_gl::GLBufferBinding(chunk.aboGL, geom.mem.aboOffset, cadgeom.aboSize, chunk.aboADDR);
-    geom.ibo = nv_helpers_gl::GLBufferBinding(chunk.iboGL, geom.mem.iboOffset, cadgeom.iboSize, chunk.iboADDR);
+    geom.vbo = nvgl::GLBufferBinding(chunk.vboGL, geom.mem.vboOffset, cadgeom.vboSize, chunk.vboADDR);
+    geom.abo = nvgl::GLBufferBinding(chunk.aboGL, geom.mem.aboOffset, cadgeom.aboSize, chunk.aboADDR);
+    geom.ibo = nvgl::GLBufferBinding(chunk.iboGL, geom.mem.iboOffset, cadgeom.iboSize, chunk.iboADDR);
 
     GLintptr descOffset = geom.mem.meshOffset;
     GLintptr primOffset = geom.mem.meshOffset + NVMeshlet::computeCommonAlignedSize(cadgeom.meshlet.descSize);
@@ -267,9 +267,9 @@ void CadSceneGL::init(const CadScene& cadscene)
     glNamedBufferSubData(chunk.meshGL, primOffset, cadgeom.meshlet.primSize, cadgeom.meshlet.primData);
     glNamedBufferSubData(chunk.meshGL, vertOffset, cadgeom.meshlet.vertSize, cadgeom.meshlet.vertData);
 
-    geom.topoMeshlet = nv_helpers_gl::GLBufferBinding(chunk.meshGL, descOffset, cadgeom.meshlet.descSize, chunk.meshADDR);
-    geom.topoPrim = nv_helpers_gl::GLBufferBinding(chunk.meshGL, primOffset, cadgeom.meshlet.primSize, chunk.meshADDR);
-    geom.topoVert = nv_helpers_gl::GLBufferBinding(chunk.meshGL, vertOffset, cadgeom.meshlet.vertSize, chunk.meshADDR);
+    geom.topoMeshlet = nvgl::GLBufferBinding(chunk.meshGL, descOffset, cadgeom.meshlet.descSize, chunk.meshADDR);
+    geom.topoPrim = nvgl::GLBufferBinding(chunk.meshGL, primOffset, cadgeom.meshlet.primSize, chunk.meshADDR);
+    geom.topoVert = nvgl::GLBufferBinding(chunk.meshGL, vertOffset, cadgeom.meshlet.vertSize, chunk.meshADDR);
 
   #if USE_PER_GEOMETRY_VIEWS
     geom.vboTEX.create(chunk.vboGL, geom.mem.vboOffset, cadgeom.vboSize, cadscene.m_cfg.fp16 ? GL_RGBA16F : GL_RGBA32F);

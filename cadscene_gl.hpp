@@ -29,7 +29,7 @@
 
 #include "cadscene.hpp"
 #include <include_gl.h>
-#include <nv_helpers_gl\base_gl.hpp>
+#include <nvgl\base_gl.hpp>
 
 
 class GeometryMemoryGL {
@@ -157,18 +157,18 @@ public:
   struct Geometry {
     GeometryMemoryGL::Allocation mem;
 
-    nv_helpers_gl::GLBufferBinding   vbo;
-    nv_helpers_gl::GLBufferBinding   abo;
-    nv_helpers_gl::GLBufferBinding   ibo;
+    nvgl::GLBufferBinding   vbo;
+    nvgl::GLBufferBinding   abo;
+    nvgl::GLBufferBinding   ibo;
 
-    nv_helpers_gl::GLBufferBinding   topoMeshlet;
-    nv_helpers_gl::GLBufferBinding   topoPrim;
-    nv_helpers_gl::GLBufferBinding   topoVert;
+    nvgl::GLBufferBinding   topoMeshlet;
+    nvgl::GLBufferBinding   topoPrim;
+    nvgl::GLBufferBinding   topoVert;
 
   #if USE_PER_GEOMETRY_VIEWS
-    nv_helpers_gl::GLTextureBuffer   vboTEX;
-    nv_helpers_gl::GLTextureBuffer   aboTEX;
-    nv_helpers_gl::GLTextureBuffer   vertTEX;
+    nvgl::GLTextureBuffer   vboTEX;
+    nvgl::GLTextureBuffer   aboTEX;
+    nvgl::GLTextureBuffer   vertTEX;
   #endif
   };
 
@@ -177,8 +177,8 @@ public:
   };
 
   struct Buffers {
-    nv_helpers_gl::GLBuffer  matrices;
-    nv_helpers_gl::GLBuffer  materials;
+    nvgl::GLBuffer  matrices;
+    nvgl::GLBuffer  materials;
   };
 
   Buffers                         m_buffers;

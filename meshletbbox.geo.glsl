@@ -148,6 +148,7 @@ void main()
   #endif
   {
     // cone triangle
+    
     meshletID = IN[0].meshletID;
     gl_Position = scene.viewProjMatrix * vec4(worldCtr, 1);
     EmitVertex();

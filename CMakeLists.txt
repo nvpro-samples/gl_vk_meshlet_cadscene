@@ -113,7 +113,6 @@ else()
 endif()
 add_executable(${EXENAME} ${SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PACKAGE_SOURCE_FILES} ${GLSL_FILES})
 
-_set_subsystem_console(${EXENAME})
 
 #####################################################################################
 # common source code needed for this sample

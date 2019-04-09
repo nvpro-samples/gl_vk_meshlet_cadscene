@@ -30,7 +30,36 @@
 
 #include "cadscene.hpp"
 
-#include <nv_helpers_vk/base_vk.hpp>
+#include <nvvk/deviceutils_vk.hpp>
+#include <nvvk/memorymanagement_vk.hpp>
+#include <nvvk/staging_vk.hpp>
+#include <nvvk/submission_vk.hpp>
+#include <nvvk/makers_vk.hpp>
+#include <nvvk/physical_vk.hpp>
+
+struct TempSubmissionInterface
+{
+  virtual VkCommandBuffer tempSubmissionCreateCommandBuffer(bool primary, VkQueueFlags preferredQueue = 0) = 0;
+  virtual void            tempSubmissionEnqueue(VkCommandBuffer cmd, VkQueueFlags preferredQueue = 0)      = 0;
+  virtual void            tempSubmissionSubmit(bool sync, VkFence fence = 0, VkQueueFlags preferredQueue = 0, uint32_t deviceMask = 0) = 0;
+};
+
+inline void FixedSizeStagingBuffer_flush(nvvk::FixedSizeStagingBuffer& staging, TempSubmissionInterface* tempIF, bool sync)
+{
+  if(!staging.canFlush())
+    return;
+
+  VkCommandBuffer          cmd   = tempIF->tempSubmissionCreateCommandBuffer(true);
+  VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  begin.flags                    = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(cmd, &begin);
+  staging.flush(cmd);
+  vkEndCommandBuffer(cmd);
+
+  tempIF->tempSubmissionEnqueue(cmd);
+  tempIF->tempSubmissionSubmit(sync);
+}
 
 struct GeometryMemoryVK
 {
@@ -62,20 +91,20 @@ struct GeometryMemoryVK
     VkDeviceSize    iboSize;
     VkDeviceSize    meshSize;
 
-    nv_helpers_vk::AllocationID vboAID;
-    nv_helpers_vk::AllocationID aboAID;
-    nv_helpers_vk::AllocationID iboAID;
-    nv_helpers_vk::AllocationID meshAID;
+    nvvk::AllocationID vboAID;
+    nvvk::AllocationID aboAID;
+    nvvk::AllocationID iboAID;
+    nvvk::AllocationID meshAID;
   };
 
 
   VkDevice                              m_device = VK_NULL_HANDLE;
   const VkAllocationCallbacks*          m_allocationCBs = nullptr;
-  nv_helpers_vk::BasicDeviceMemoryAllocator*  m_memoryAllocator;
+  nvvk::BlockDeviceMemoryAllocator*  m_memoryAllocator;
   std::vector<Chunk>                    m_chunks;
   bool                                  m_fp16 = false;
 
-  void init(VkDevice device, nv_helpers_vk::BasicDeviceMemoryAllocator* deviceAllocator, const VkPhysicalDeviceLimits& limits, VkDeviceSize vboStride, VkDeviceSize aboStride, VkDeviceSize maxChunk, const VkAllocationCallbacks* allocator = nullptr);
+  void init(VkDevice device, nvvk::BlockDeviceMemoryAllocator* deviceAllocator, const VkPhysicalDeviceLimits& limits, VkDeviceSize vboStride, VkDeviceSize aboStride, VkDeviceSize maxChunk, const VkAllocationCallbacks* allocator = nullptr);
   void deinit();
   void alloc(VkDeviceSize vboSize, VkDeviceSize aboSize, VkDeviceSize iboSize, VkDeviceSize meshSize, Allocation& allocation);
   void finalize();
@@ -175,8 +204,8 @@ public:
     VkBuffer    materials = VK_NULL_HANDLE;
     VkBuffer    matrices = VK_NULL_HANDLE;
 
-    nv_helpers_vk::AllocationID   materialsAID;
-    nv_helpers_vk::AllocationID   matricesAID;
+    nvvk::AllocationID   materialsAID;
+    nvvk::AllocationID   matricesAID;
   };
 
   struct Infos {
@@ -188,12 +217,12 @@ public:
   };
 
   struct Config {
-    nv_helpers_vk::TempSubmissionInterface* tempInterface;
+    TempSubmissionInterface* tempInterface;
   };
 
   VkDevice                                  m_device = VK_NULL_HANDLE;
   const VkAllocationCallbacks*              m_allocator = nullptr;
-  nv_helpers_vk::BasicDeviceMemoryAllocator m_memAllocator;
+  nvvk::BlockDeviceMemoryAllocator m_memAllocator;
 
   Config                        m_config;
 
@@ -204,10 +233,10 @@ public:
   GeometryMemoryVK              m_geometryMem;
 
 
-  void init(const CadScene& cadscene, VkDevice device, const nv_helpers_vk::PhysicalInfo* physical, const Config& config, const VkAllocationCallbacks*  allocator = nullptr);
+  void init(const CadScene& cadscene, VkDevice device, const nvvk::PhysicalInfo* physical, const Config& config, const VkAllocationCallbacks*  allocator = nullptr);
   void deinit();
 
 private:
 
-  void upload(nv_helpers_vk::BasicStagingBuffer& staging, const VkDescriptorBufferInfo& binding, const void* data);
+  void upload(nvvk::FixedSizeStagingBuffer& staging, const VkDescriptorBufferInfo& binding, const void* data);
 };

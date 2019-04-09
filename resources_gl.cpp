@@ -29,7 +29,7 @@
 #include <imgui/imgui_impl_gl.h>
 #include "nvmeshlet_builder.hpp"
 
-using namespace nv_helpers_gl;
+using namespace nvgl;
 
 namespace meshlettest {
 
@@ -74,7 +74,7 @@ namespace meshlettest {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
-    m_gltimers.deinit();
+    m_profilerGL.deinit();
 
     glDeleteVertexArrays(1, &m_common.standardVao);
 
@@ -210,7 +210,7 @@ namespace meshlettest {
     glUseProgram(0);
   }
 
-  bool ResourcesGL::init(NVPWindow *window)
+  bool ResourcesGL::init(ContextWindow* contextWindow, nvh::Profiler* profiler)
   {
     const GLubyte* renderer = glGetString(GL_RENDERER);
     LOGI("GL device: %s\n", renderer);
@@ -224,7 +224,8 @@ namespace meshlettest {
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT,&uboAlignment);
     initAlignedSizes(uboAlignment);
 
-    m_gltimers.init( nv_helpers::Profiler::START_TIMERS);
+    m_profilerGL = nvgl::ProfilerGL(profiler);
+    m_profilerGL.init();
     m_nativeMeshSupport = has_GL_NV_mesh_shader != 0;
 
     // Common
@@ -239,6 +240,8 @@ namespace meshlettest {
   
   void ResourcesGL::blitFrame(const FrameConfig& global)
   {
+    const nvgl::ProfilerGL::Section profile(m_profilerGL, "BltUI");
+
     // blit to background
     glBindFramebuffer(GL_READ_FRAMEBUFFER, m_framebuffer.fboScene);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -254,9 +257,9 @@ namespace meshlettest {
 
   }
 
-  nv_math::mat4f ResourcesGL::perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const
+  nvmath::mat4f ResourcesGL::perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const
   {
-    return nv_math::perspective(fovy, aspect, nearPlane, farPlane);
+    return nvmath::perspective(fovy, aspect, nearPlane, farPlane);
   }
 
   void ResourcesGL::getStats(CullStats& stats)

@@ -31,28 +31,29 @@
 #include <imgui/imgui_helper.h>
 
 #if HAS_OPENGL
-  #include <nv_helpers_gl/extensions_gl.hpp>
-  #include <nv_helpers_gl/appwindowprofiler_gl.hpp>
-  #include <nv_helpers_gl/error_gl.hpp>
-  #include <nv_helpers_gl/base_gl.hpp>
-  #include <nv_helpers_gl/glsltypes_gl.hpp>
+  #include <nvgl/extensions_gl.hpp>
+  #include <nvgl/appwindowprofiler_gl.hpp>
+  #include <nvgl/error_gl.hpp>
+  #include <nvgl/base_gl.hpp>
+  #include <nvgl/glsltypes_gl.hpp>
 #else
-  #include <nv_helpers/appwindowprofiler.hpp>
+  #include <nvvk/appwindowprofiler_vk.hpp>
 #endif
 
-#include <nv_helpers/assetsloader.hpp>
-#include <nv_helpers/geometry.hpp>
-#include <nv_helpers/misc.hpp>
-#include <nv_helpers/cameracontrol.hpp>
-#include <nv_helpers_vk/extensions_vk.hpp>
+#include <nvvk/context_vk.hpp>
+
+#include <nvh/assetsloader.hpp>
+#include <nvh/geometry.hpp>
+#include <nvh/misc.hpp>
+#include <nvh/cameracontrol.hpp>
+#include <nvvk/extensions_vk.hpp>
 
 #include "renderer.hpp"
 
 extern bool vulkanIsExtensionSupported(uint32_t, const char* name);
 
 
-using namespace nv_helpers;
-using namespace nv_helpers_gl;
+using namespace nvh;
 
 
 namespace meshlettest
@@ -61,6 +62,21 @@ namespace meshlettest
   int const SAMPLE_SIZE_HEIGHT(1024);
   int const SAMPLE_MAJOR_VERSION(4);
   int const SAMPLE_MINOR_VERSION(5);
+
+  void setupVulkanContextInfo(nvvk::ContextInfoVK& info) 
+  {
+    static VkPhysicalDeviceMeshShaderFeaturesNV meshFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
+    static VkPhysicalDeviceFloat16Int8FeaturesKHR float16int8Features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR };
+    info.apiMajor = 1;
+    info.apiMinor = 1;
+    info.device = Resources::s_vkDevice;
+#if _DEBUG && !HAS_OPENGL
+    info.addInstanceLayer("VK_LAYER_LUNARG_standard_validation");
+#endif
+    info.addDeviceExtension(VK_NV_GLSL_SHADER_EXTENSION_NAME, true); // flag optional, driver still supports it
+    info.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeatures);
+    info.addDeviceExtension(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME, true, &float16int8Features);
+  }
 
   // used for loading viewpoint files and material filter files
   class SimpleParameterFile
@@ -153,9 +169,9 @@ namespace meshlettest
 
   class Sample 
   #if HAS_OPENGL
-  : public nv_helpers_gl::AppWindowProfilerGL 
+  : public nvgl::AppWindowProfilerGL 
   #else
-  : public nv_helpers::AppWindowProfiler
+  : public nvvk::AppWindowProfilerVK
   #endif
   
   {
@@ -198,7 +214,7 @@ namespace meshlettest
     struct ViewPoint
     {
       std::string     name;
-      nv_math::mat4f  mat;
+      nvmath::mat4f  mat;
       float           sceneScale;
     };
 
@@ -256,20 +272,29 @@ namespace meshlettest
 
     Sample() 
     #if HAS_OPENGL
-      : AppWindowProfilerGL(false)
+      : AppWindowProfilerGL(false, true)
     #else
-      : AppWindowProfiler(NVPWindow::WINDOW_API_VULKAN)
+      : AppWindowProfilerVK(false, true)
     #endif
     {
       m_modelConfig.extraAttributes = 1;
       setupConfigParameters();
+
+#if defined (NDEBUG)
+      setVsync(false);
+#endif
+
+#if !HAS_OPENGL
+      setupVulkanContextInfo(m_contextInfo);
+#endif
+
     }
 
   public:
 
     void processUI(int width, int height, double time);
 
-    void parseConfig(int argc, const char**argv, const std::string& defaultpath) override;
+    bool validateConfig() override;
 
     bool begin() override;
     void think(double time) override;
@@ -279,7 +304,7 @@ namespace meshlettest
 
     void end() override;
         
-    // return true to prevent m_window updates
+    // return true to prevent m_windowState updates
     bool mouse_pos    (int x, int y) override
     {
       if (!m_useUI) return false;
@@ -310,33 +335,7 @@ namespace meshlettest
 
       return ImGuiH::key_button(button, action, mods);
     }
-    
-  #if HAS_OPENGL
-    const ContextFlagsBase* preWindowContext(int apiMajor, int apiMinor) {
-      static ContextFlagsGL info;
-      info.major = apiMajor;
-      info.minor = apiMinor;
-      info.device = Resources::s_glDevice;
 
-      return (const ContextFlagsBase*)&info;
-    }
-  #else
-    const ContextFlagsBase* preWindowContext(int apiMajor, int apiMinor) {
-      static ContextFlagsVK info;
-      static VkPhysicalDeviceMeshShaderFeaturesNV meshFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
-      info.apiMajor = 1;
-      info.apiMinor = 1;
-      info.device = Resources::s_vkDevice;
-    #if _DEBUG
-      info.addInstanceLayer("VK_LAYER_LUNARG_standard_validation");
-    #endif
-      info.addDeviceExtension(VK_NV_GLSL_SHADER_EXTENSION_NAME, true); // flag optional, driver still supports it
-      info.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeatures);
-      info.addDeviceExtension("VK_KHX_shader_explicit_arithmetic_types_int8", true);
-
-      return (const ContextFlagsBase*)&info;
-    }
-#endif
   };
 
   std::string Sample::getShaderPrepend()
@@ -375,12 +374,12 @@ namespace meshlettest
   {
     std::string modelFilename(filename);
     
-    if (!nv_helpers::fileExists(filename)) {
-      modelFilename = nv_helpers::getFileName(filename);
+    if (!nvh::fileExists(filename)) {
+      modelFilename = nvh::getFileName(filename);
       std::vector<std::string>  searchPaths;
       searchPaths.push_back("./");
       searchPaths.push_back(PROJECT_DOWNLOAD_ABSDIRECTORY);
-      modelFilename = nv_helpers::findFile(modelFilename, searchPaths);
+      modelFilename = nvh::findFile(modelFilename, searchPaths);
     }
 
     m_scene.unload();
@@ -434,8 +433,8 @@ namespace meshlettest
       m_resources->m_cullBackFace = m_tweak.useBackFaceCull;
       m_resources->m_clipping = m_tweak.useClipping;
       m_resources->m_extraAttributes = m_modelConfig.extraAttributes;
-      bool valid = m_resources->init(this);
-      valid = valid && m_resources->initFramebuffer(m_window.m_viewsize[0],m_window.m_viewsize[1],m_tweak.supersample, getVsync());
+      bool valid = m_resources->init(&m_contextWindow, &m_profiler);
+      valid = valid && m_resources->initFramebuffer(m_windowState.m_viewSize[0],m_windowState.m_viewSize[1],m_tweak.supersample, getVsync());
       valid = valid && m_resources->initPrograms(sysExePath(), getShaderPrepend());
       valid = valid && m_resources->initScene(m_scene);
 
@@ -512,15 +511,9 @@ namespace meshlettest
 
     m_profilerPrint = false;
     m_timeInTitle   = true;
-
-    m_profiler.setDefaultGPUInterface(NULL);
-
+    
     m_renderer  = NULL;
     m_resources = NULL;
-
-#if defined (NDEBUG)
-    vsync(false);
-#endif
 
     bool validated(true);
     validated = validated && initProgram();
@@ -553,7 +546,7 @@ namespace meshlettest
 
     loadViewpoints();
 
-    ImGuiH::Init(m_window.m_viewsize[0], m_window.m_viewsize[1], this);
+    ImGuiH::Init(m_windowState.m_viewSize[0], m_windowState.m_viewSize[1], this);
     if (m_useUI) {
       auto &imgui_io = ImGui::GetIO();
 
@@ -574,9 +567,9 @@ namespace meshlettest
     }
 
     m_control.m_sceneUp = m_modelUpVector;
-    m_control.m_sceneOrbit =     nv_math::vec3f(m_scene.m_bbox.max+m_scene.m_bbox.min)*0.5f;
-    m_control.m_sceneDimension = nv_math::length((m_scene.m_bbox.max-m_scene.m_bbox.min));
-    m_control.m_viewMatrix =     nv_math::look_at(m_control.m_sceneOrbit - (-vec3(1,1,1)*m_control.m_sceneDimension*0.5f), m_control.m_sceneOrbit, m_modelUpVector);
+    m_control.m_sceneOrbit =     nvmath::vec3f(m_scene.m_bbox.max+m_scene.m_bbox.min)*0.5f;
+    m_control.m_sceneDimension = nvmath::length((m_scene.m_bbox.max-m_scene.m_bbox.min));
+    m_control.m_viewMatrix =     nvmath::look_at(m_control.m_sceneOrbit - (-vec3(1,1,1)*m_control.m_sceneDimension*0.5f), m_control.m_sceneOrbit, m_modelUpVector);
 
     m_frameConfig.sceneUbo.wLightPos = (m_scene.m_bbox.max+m_scene.m_bbox.min)*0.5f + m_control.m_sceneDimension;
     m_frameConfig.sceneUbo.wLightPos.w = 1.0;
@@ -714,18 +707,18 @@ namespace meshlettest
 
   void Sample::think(double time)
   {
-    int width   = m_window.m_viewsize[0];
-    int height  = m_window.m_viewsize[1];
+    int width   = m_windowState.m_viewSize[0];
+    int height  = m_windowState.m_viewSize[1];
 
     if (m_useUI) {
       processUI(width, height, time);
     }
 
-    m_control.processActions(m_window.m_viewsize,
-      nv_math::vec2f(m_window.m_mouseCurrent[0],m_window.m_mouseCurrent[1]),
-      m_window.m_mouseButtonFlags, m_window.m_wheel);
+    m_control.processActions(m_windowState.m_viewSize,
+      nvmath::vec2f(m_windowState.m_mouseCurrent[0],m_windowState.m_mouseCurrent[1]),
+      m_windowState.m_mouseButtonFlags, m_windowState.m_mouseWheel);
 
-    if (m_window.onPress(KEY_R) || 
+    if (m_windowState.onPress(KEY_R) || 
         m_tweak.useBackFaceCull != m_lastTweak.useBackFaceCull ||
         m_tweak.useMeshShaderCull != m_lastTweak.useMeshShaderCull ||
         m_tweak.useClipping != m_lastTweak.useClipping ||
@@ -743,7 +736,7 @@ namespace meshlettest
       m_resources->m_clipping = m_tweak.useClipping;
       m_resources->reloadPrograms(getShaderPrepend());
     }
-    else if (m_window.onPress(KEY_C)) {
+    else if (m_windowState.onPress(KEY_C)) {
       saveViewpoint();
     }
 
@@ -804,20 +797,20 @@ namespace meshlettest
 
       if (m_tweak.animate) {
         float t = float(time);
-        nv_math::quatf quat = nv_math::axis_to_quat(m_modelUpVector, t * 0.5f);
-        mat4 rotator = nv_math::quat_2_mat(quat);
+        nvmath::quatf quat = nvmath::axis_to_quat(m_modelUpVector, t * 0.5f);
+        mat4 rotator = nvmath::quat_2_mat(quat);
         vec3 dir = rotator * (-vec3(1, 1, 1));
         float distance = 0.4f + sinf(t) * 0.2f;
-        m_control.m_viewMatrix = nv_math::look_at(m_control.m_sceneOrbit - (dir * m_control.m_sceneDimension*distance), m_control.m_sceneOrbit, m_modelUpVector);
+        m_control.m_viewMatrix = nvmath::look_at(m_control.m_sceneOrbit - (dir * m_control.m_sceneDimension*distance), m_control.m_sceneOrbit, m_modelUpVector);
       }
 
-      nv_math::mat4 projection = m_resources->perspectiveProjection(m_tweak.fov, float(width)/float(height), m_control.m_sceneDimension*0.001f, m_control.m_sceneDimension*10.0f);
-      nv_math::mat4 view = m_control.m_viewMatrix;
-      nv_math::mat4 viewI = nv_math::invert(view);
+      nvmath::mat4 projection = m_resources->perspectiveProjection(m_tweak.fov, float(width)/float(height), m_control.m_sceneDimension*0.001f, m_control.m_sceneDimension*10.0f);
+      nvmath::mat4 view = m_control.m_viewMatrix;
+      nvmath::mat4 viewI = nvmath::invert(view);
 
       sceneUbo.viewProjMatrix = projection * view;
       sceneUbo.viewMatrix = view;
-      sceneUbo.viewMatrixIT = nv_math::transpose(viewI);
+      sceneUbo.viewMatrixIT = nvmath::transpose(viewI);
 
       sceneUbo.viewPos = sceneUbo.viewMatrixIT.row(3);;
       sceneUbo.viewDir = -view.row(2);
@@ -825,28 +818,22 @@ namespace meshlettest
       sceneUbo.wLightPos = sceneUbo.viewMatrixIT.row(3);
       sceneUbo.wLightPos.w = 1.0;
 
-      nv_math::vec3 viewDir = view.row(2);
-      nv_math::vec3 sideDir = -view.row(0);
-      nv_math::vec3 sideUpDir = view.row(1);
+      nvmath::vec3 viewDir = view.row(2);
+      nvmath::vec3 sideDir = -view.row(0);
+      nvmath::vec3 sideUpDir = view.row(1);
       sceneUbo.wLightPos += (sideDir + sideUpDir + viewDir * 0.25f) * m_control.m_sceneDimension * 0.25f;
 
-      sceneUbo.wClipPlanes[0] = vec4f(-1, 0, 0, nv_math::lerp(m_tweak.clipPosition.x, m_scene.m_bboxInstanced.min.x, m_scene.m_bboxInstanced.max.x));
-      sceneUbo.wClipPlanes[1] = vec4f(0, -1, 0, nv_math::lerp(m_tweak.clipPosition.y, m_scene.m_bboxInstanced.min.y, m_scene.m_bboxInstanced.max.y));
-      sceneUbo.wClipPlanes[2] = vec4f(0, 0, -1, nv_math::lerp(m_tweak.clipPosition.z, m_scene.m_bboxInstanced.min.z, m_scene.m_bboxInstanced.max.z));
+      sceneUbo.wClipPlanes[0] = vec4f(-1, 0, 0, nvmath::lerp(m_tweak.clipPosition.x, m_scene.m_bboxInstanced.min.x, m_scene.m_bboxInstanced.max.x));
+      sceneUbo.wClipPlanes[1] = vec4f(0, -1, 0, nvmath::lerp(m_tweak.clipPosition.y, m_scene.m_bboxInstanced.min.y, m_scene.m_bboxInstanced.max.y));
+      sceneUbo.wClipPlanes[2] = vec4f(0, 0, -1, nvmath::lerp(m_tweak.clipPosition.z, m_scene.m_bboxInstanced.min.z, m_scene.m_bboxInstanced.max.z));
     }
 
 
-    // We use the timer sections that force flushes, to get more accurate CPU costs
-    // per section. In shipping application you would not want to do this
-
     {
-      NV_PROFILE_SECTION_EX("Render", m_resources->getTimerInterface(), true );
-      m_renderer->draw(m_frameConfig, m_profiler);
+      m_renderer->draw(m_frameConfig);
     }
 
     {
-      NV_PROFILE_SECTION_EX("BltUI", m_resources->getTimerInterface(), true);
-
       if (m_useUI) {
         ImGui::Render();
         m_frameConfig.imguiDrawData = ImGui::GetDrawData();
@@ -887,7 +874,7 @@ namespace meshlettest
     ViewPoint vp;
     vp.mat = m_control.m_viewMatrix;
     vp.sceneScale = 1.0;
-    vp.name = nv_helpers::stringFormat("ViewPoint%d", idx);
+    vp.name = nvh::stringFormat("ViewPoint%d", idx);
     m_ui.enumAdd(GUI_VIEWPOINT, idx, vp.name.c_str());
 
     m_viewPoints.push_back(vp);
@@ -939,6 +926,9 @@ namespace meshlettest
 
   void Sample::setupConfigParameters()
   {
+    m_parameterList.addFilename(".csf", &m_modelFilename);
+    m_parameterList.addFilename(".csf.gz", &m_modelFilename);
+
     m_parameterList.add("vkdevice", &Resources::s_vkDevice);
     m_parameterList.add("gldevice", &Resources::s_glDevice);
 
@@ -963,6 +953,7 @@ namespace meshlettest
     m_parameterList.add("allowshorts", &m_modelConfig.allowShorts);
     m_parameterList.add("fp16vertices", &m_modelConfig.fp16);
     m_parameterList.add("extraattributes", &m_modelConfig.extraAttributes);
+    m_parameterList.add("colorizeextra", &m_modelConfig.colorizeExtra);
 
     m_parameterList.add("objectfirst", &m_tweak.objectFrom);
     m_parameterList.add("objectnum", &m_tweak.objectNum);
@@ -989,24 +980,17 @@ namespace meshlettest
     m_parameterList.add("message", &m_messageString);
   }
 
-  void Sample::parseConfig( int argc, const char**argv, const std::string& defaultPath )
+
+  bool Sample::validateConfig()
   {
-    for (uint32_t i = 0; i < uint32_t(argc); i++){
-      std::string argstr = std::string(argv[i]);
-      if (endsWith(argstr, ".exe")) { }
-      else if (endsWith(argstr, ".cfg") || endsWith(argstr, ".bat")) {
-        parseConfigFile(argv[i]);
-      }
-      else if (strstr(argv[i], ".csf")) {
-        m_modelFilename = addPath(defaultPath, argstr);
-      }
-      else if (m_parameterList.applyParameters(argc, argv, i, "-", defaultPath.c_str())) {
-        int t = 0;
-      }
-      else {
-        LOGOK("  unhandled argument %s\n", argv[i]);
-      }
+    if (m_modelFilename.empty())
+    {
+      LOGI("no modelfile specified\n");
+      LOGI("exe <filename.csf/cfg> parameters...\n");
+      m_parameterList.print();
+      return false;
     }
+    return true;
   }
 
   void Sample::setRendererFromName()
@@ -1025,41 +1009,21 @@ namespace meshlettest
 
 using namespace meshlettest;
 
-#if defined(_WIN32) && defined(NDEBUG)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-
 #include <omp.h>
 #include <thread>
 
-int sample_main(int argc, const char** argv)
+int main(int argc, const char** argv)
 {
-  SETLOGFILENAME();
-#if defined(_WIN32) && defined(NDEBUG)
-  //SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-#endif
+  NVPWindow::System system(argv[0], PROJECT_NAME);
 
   omp_set_num_threads(std::thread::hardware_concurrency());
 
   Sample sample;
-  sample.parseConfig(argc,argv,".");
-  if (sample.m_modelFilename.empty()) {
-    LOGI("exe <filename.csf/cfg> parameters...\n");
-    sample.m_parameterList.print();
-    return 0;
-  }
 
   return sample.run(
     PROJECT_NAME,
     argc, argv,
-    SAMPLE_SIZE_WIDTH, SAMPLE_SIZE_HEIGHT,
-    SAMPLE_MAJOR_VERSION, SAMPLE_MINOR_VERSION);
-}
-
-void sample_print(int level, const char * fmt)
-{
-
+    SAMPLE_SIZE_WIDTH, SAMPLE_SIZE_HEIGHT);
 }
 
 

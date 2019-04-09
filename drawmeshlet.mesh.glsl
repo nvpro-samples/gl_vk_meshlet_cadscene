@@ -221,8 +221,9 @@ vec4 getExtra( uint vidx, uint xtra ){
 // OUTPUT
 
 layout(location=0) out Interpolants {
-  vec3 wPos;
-  vec3 wNormal;
+  vec3  wPos;
+  float dummy;
+  vec3  wNormal;
   flat uint meshletID;
 #if EXTRA_ATTRIBUTES
   vec4 xtra[EXTRA_ATTRIBUTES];
@@ -241,6 +242,7 @@ vec4 procVertex(const uint vert, uint vidx)
   gl_MeshVerticesNV[vert].gl_Position = hPos;
   
   OUT[vert].wPos = wPos;
+  OUT[vert].dummy = 0;
   OUT[vert].meshletID = meshletID;
   
 #if USE_CLIPPING
@@ -430,9 +432,8 @@ void main()
     //
     // Most of the time we will have fully saturated vertex utilization,
     // but we may compute the last vertex redundantly.
-    vert = min(vert,vertMax);
     {
-      uint vidx = texelFetch(texIbo, int(vertBegin + vert + geometryOffsets.z)).x + geometryOffsets.w;
+      uint vidx = texelFetch(texIbo, int(vertBegin + min(vert,vertMax) + geometryOffsets.z)).x + geometryOffsets.w;
       vec4 hPos = procVertex(vert, vidx);
       setVertexClip(vert, getCullBits(hPos));
     

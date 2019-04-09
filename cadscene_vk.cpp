@@ -25,14 +25,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cadscene_vk.hpp"
 #include "nvmeshlet_builder.hpp"
 
-#include <nv_helpers_vk/base_vk.hpp>
-#include <nv_helpers/nvprint.hpp>
+#include "cadscene_vk.hpp"
 
+#include <nvh/nvprint.hpp>
 #include <algorithm>
 #include <inttypes.h>
+
 
 
 static inline VkDeviceSize alignedSize(VkDeviceSize sz, VkDeviceSize align)
@@ -41,7 +41,7 @@ static inline VkDeviceSize alignedSize(VkDeviceSize sz, VkDeviceSize align)
 }
 
 
-void GeometryMemoryVK::init(VkDevice device, nv_helpers_vk::BasicDeviceMemoryAllocator* deviceAllocator, const VkPhysicalDeviceLimits& limits, VkDeviceSize vboStride, VkDeviceSize aboStride, VkDeviceSize maxChunk, const VkAllocationCallbacks* allocator/*=nullptr*/)
+void GeometryMemoryVK::init(VkDevice device, nvvk::BlockDeviceMemoryAllocator* deviceAllocator, const VkPhysicalDeviceLimits& limits, VkDeviceSize vboStride, VkDeviceSize aboStride, VkDeviceSize maxChunk, const VkAllocationCallbacks* allocator/*=nullptr*/)
 {
   m_device = device;
   m_allocationCBs = allocator;
@@ -140,12 +140,12 @@ void GeometryMemoryVK::finalize()
 
   Chunk& chunk = getActiveChunk();
 
-  nv_helpers_vk::DeviceUtils utils(m_device, m_allocationCBs);
+  nvvk::DeviceUtils utils(m_device, m_allocationCBs);
 
-  VkBufferCreateInfo vboInfo = utils.makeBufferCreateInfo(chunk.vboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
-  VkBufferCreateInfo aboInfo = utils.makeBufferCreateInfo(chunk.aboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
-  VkBufferCreateInfo iboInfo = utils.makeBufferCreateInfo(chunk.iboSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
-  VkBufferCreateInfo meshInfo = utils.makeBufferCreateInfo(chunk.meshSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
+  VkBufferCreateInfo vboInfo = nvvk::makeBufferCreateInfo(chunk.vboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
+  VkBufferCreateInfo aboInfo = nvvk::makeBufferCreateInfo(chunk.aboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
+  VkBufferCreateInfo iboInfo = nvvk::makeBufferCreateInfo(chunk.iboSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
+  VkBufferCreateInfo meshInfo = nvvk::makeBufferCreateInfo(chunk.meshSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT);
 
   VkResult result;
   result = m_memoryAllocator->create(vboInfo, chunk.vbo, chunk.vboAID);
@@ -157,7 +157,7 @@ void GeometryMemoryVK::finalize()
   result = m_memoryAllocator->create(meshInfo, chunk.mesh, chunk.meshAID);
   assert(result == VK_SUCCESS);
 
-  chunk.meshInfo = utils.makeDescriptorBufferInfo(chunk.mesh, chunk.meshSize);
+  chunk.meshInfo = {chunk.mesh, 0, chunk.meshSize};
   chunk.vboView = utils.createBufferView(chunk.vbo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT, chunk.vboSize);
   chunk.aboView = utils.createBufferView(chunk.abo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT, chunk.aboSize);
   chunk.vert16View = utils.createBufferView(chunk.mesh, VK_FORMAT_R16_UINT, chunk.meshSize);
@@ -165,16 +165,16 @@ void GeometryMemoryVK::finalize()
 }
 
 
-void CadSceneVK::upload(nv_helpers_vk::BasicStagingBuffer& staging, const VkDescriptorBufferInfo& binding, const void* data)
+void CadSceneVK::upload(nvvk::FixedSizeStagingBuffer& staging, const VkDescriptorBufferInfo& binding, const void* data)
 {
   if (staging.cannotEnqueue(binding.range)) {
-    staging.flush(m_config.tempInterface, true);
+    FixedSizeStagingBuffer_flush(staging, m_config.tempInterface, true);
   }
   staging.enqueue(binding.buffer, binding.offset, binding.range, data);
 }
 
 
-void CadSceneVK::init(const CadScene& cadscene, VkDevice device, const nv_helpers_vk::PhysicalInfo* physical, const Config& config, const VkAllocationCallbacks* allocator /*= nullptr*/)
+void CadSceneVK::init(const CadScene& cadscene, VkDevice device, const nvvk::PhysicalInfo* physical, const Config& config, const VkAllocationCallbacks* allocator /*= nullptr*/)
 {
   VkResult result;
 
@@ -184,7 +184,7 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, const nv_helper
 
   m_memAllocator.init(m_device, &physical->memoryProperties, 1024 * 1024 * 256, m_allocator);
 
-  nv_helpers_vk::DeviceUtils utils(device, allocator);
+  nvvk::DeviceUtils utils(device, allocator);
 
   m_geometry.resize(cadscene.m_geometry.size(), { 0 });
 
@@ -219,7 +219,7 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, const nv_helper
     LOGI("scene geometry: used %d KB allocated %d KB\n", usedSize / 1024, allocatedSize / 1024);
   }
 
-  nv_helpers_vk::BasicStagingBuffer staging;
+  nvvk::FixedSizeStagingBuffer staging;
   staging.init(m_device, &physical->memoryProperties);
 
   for (size_t g = 0; g < cadscene.m_geometry.size(); g++) {
@@ -269,23 +269,23 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, const nv_helper
     }
   }
 
-  VkBufferCreateInfo materialsInfo = utils.makeBufferCreateInfo(cadscene.m_materials.size() * sizeof(CadScene::Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+  VkBufferCreateInfo materialsInfo = nvvk::makeBufferCreateInfo(cadscene.m_materials.size() * sizeof(CadScene::Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
   result = m_memAllocator.create(materialsInfo, m_buffers.materials, m_buffers.materialsAID);
   assert(result == VK_SUCCESS);
 
-  VkBufferCreateInfo matricesInfo = utils.makeBufferCreateInfo(cadscene.m_matrices.size() * sizeof(CadScene::MatrixNode), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+  VkBufferCreateInfo matricesInfo = nvvk::makeBufferCreateInfo(cadscene.m_matrices.size() * sizeof(CadScene::MatrixNode), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
   result = m_memAllocator.create(matricesInfo, m_buffers.matrices, m_buffers.matricesAID);
   assert(result == VK_SUCCESS);
 
-  m_infos.materialsSingle = utils.makeDescriptorBufferInfo(m_buffers.materials, sizeof(CadScene::Material));
-  m_infos.materials = utils.makeDescriptorBufferInfo(m_buffers.materials, materialsInfo.size);
-  m_infos.matricesSingle = utils.makeDescriptorBufferInfo(m_buffers.matrices, sizeof(CadScene::MatrixNode));
-  m_infos.matrices = utils.makeDescriptorBufferInfo(m_buffers.matrices, matricesInfo.size);
+  m_infos.materialsSingle = {m_buffers.materials, 0, sizeof(CadScene::Material)};
+  m_infos.materials       = {m_buffers.materials, 0, materialsInfo.size};
+  m_infos.matricesSingle  = {m_buffers.matrices, 0, sizeof(CadScene::MatrixNode)};
+  m_infos.matrices        = {m_buffers.matrices, 0, matricesInfo.size};
 
   upload(staging, m_infos.materials, cadscene.m_materials.data());
   upload(staging, m_infos.matrices, cadscene.m_matrices.data());
 
-  staging.flush(m_config.tempInterface, true);
+  FixedSizeStagingBuffer_flush(staging, m_config.tempInterface, true);
   staging.deinit();
 }
 

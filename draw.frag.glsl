@@ -60,8 +60,9 @@
 // INPUT
 
 layout(location=0) in Interpolants {
-  vec3 wPos;
-  vec3 wNormal;
+  vec3  wPos;
+  float dummy;
+  vec3  wNormal;
   flat uint meshletID;
 #if EXTRA_ATTRIBUTES
   vec4 xtra[EXTRA_ATTRIBUTES];
@@ -78,7 +79,7 @@ layout(location=0,index=0) out vec4 out_Color;
 
 void main()
 {
-  vec4 color = object.color * 0.8 + 0.2;
+  vec4 color = object.color * 0.8 + 0.2 + IN.dummy;
   if (scene.colorize != 0) {
     uint colorPacked = murmurHash(IN.meshletID);
     color = color * 0.5 + unpackUnorm4x8(colorPacked) * 0.5;
@@ -87,7 +88,7 @@ void main()
   vec3 eyePos = vec3(scene.viewMatrixIT[0].w,scene.viewMatrixIT[1].w,scene.viewMatrixIT[2].w);
   
   vec3 wNormal =  IN.wNormal;
-  vec3 lightDir = normalize(scene.wLightPos.xyz - IN.wPos);
+  vec3 lightDir = normalize(scene.wLightPos.xyz - IN.wPos.xyz);
   vec3 normal   = normalize(wNormal) * (gl_FrontFacing ? 1 : 1);
 
 #if 1

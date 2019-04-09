@@ -28,12 +28,11 @@
 #include <assert.h>
 #include <algorithm>
 #include "renderer.hpp"
-#include <main.h>
 #include "resources_vk.hpp"
 
-#include <nv_math/nv_math_glsltypes.h>
+#include <nvmath/nvmath_glsltypes.h>
 
-using namespace nv_math;
+using namespace nvmath;
 #include "common.h"
 
 
@@ -77,7 +76,7 @@ namespace meshlettest
 
     bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) override;
     void deinit() override;
-    void draw(const FrameConfig& global, nv_helpers::Profiler& profiler) override;
+    void draw(const FrameConfig& global) override;
 
 
     RendererVK()
@@ -195,7 +194,7 @@ namespace meshlettest
     vkDestroyCommandPool(m_resources->m_device, m_cmdPool, NULL);
   }
 
-  void RendererVK::draw(const FrameConfig& global, nv_helpers::Profiler& profiler)
+  void RendererVK::draw(const FrameConfig& global)
   {
     ResourcesVK* NV_RESTRICT res = m_resources;
 
@@ -206,21 +205,23 @@ namespace meshlettest
       GenerateCmdBuffers();
     }
 
-    
-    // generic state setup
     VkCommandBuffer primary = res->createTempCmdBuffer();
-    vkCmdUpdateBuffer(primary, res->m_common.viewBuffer, 0, sizeof(SceneData), (const uint32_t*)&global.sceneUbo);
-    vkCmdUpdateBuffer(primary, res->m_common.statsBuffer, 0, sizeof(CullStats), (const uint32_t*)&m_list->m_stats);
-    res->cmdPipelineBarrier(primary);
 
-    // clear via pass
-    res->cmdBeginRenderPass(primary, true, true);
-    vkCmdExecuteCommands(primary, global.meshletBoxes ? 2 : 1, m_cmdBuffers);
-    vkCmdEndRenderPass(primary);
-    res->cmdCopyStats(primary);
+    {
+      const nvvk::ProfilerVK::Section profile(res->m_profilerVK, "Render", primary);
+
+      vkCmdUpdateBuffer(primary, res->m_common.viewBuffer, 0, sizeof(SceneData), (const uint32_t*)&global.sceneUbo);
+      vkCmdUpdateBuffer(primary, res->m_common.statsBuffer, 0, sizeof(CullStats), (const uint32_t*)&m_list->m_stats);
+      res->cmdPipelineBarrier(primary);
+
+      // clear via pass
+      res->cmdBeginRenderPass(primary, true, true);
+      vkCmdExecuteCommands(primary, global.meshletBoxes ? 2 : 1, m_cmdBuffers);
+      vkCmdEndRenderPass(primary);
+      res->cmdCopyStats(primary);
+    }
+
     vkEndCommandBuffer(primary);
-
-
     res->submissionEnqueue(primary);
   }
 

@@ -28,18 +28,17 @@
 #pragma once
 
 #include "resources.hpp"
-#include <nv_helpers/tnulled.hpp>
-#include <nv_helpers_gl/base_gl.hpp>
-#include <nv_helpers_gl/profilertimers_gl.hpp>
-#include <nv_helpers_gl/programmanager_gl.hpp>
-#include <main.h>
+#include <nvh/tnulled.hpp>
+#include <nvgl/base_gl.hpp>
+#include <nvgl/profiler_gl.hpp>
+#include <nvgl/programmanager_gl.hpp>
 
 #include "cadscene_gl.hpp"
 
 namespace meshlettest {  
   
   template <typename T>
-  using TNulled = nv_helpers::TNulled<T>;
+  using TNulled = nvh::TNulled<T>;
 
   class ResourcesGL : public Resources 
   {
@@ -48,7 +47,7 @@ namespace meshlettest {
     static const int CYCLED_FRAMES = 4;
 
     struct ProgramIDs {
-      nv_helpers_gl::ProgramManager::ProgramID
+      nvgl::ProgramManager::ProgramID
         draw_object_tris,
         draw_object_mesh,
         draw_object_mesh_task,
@@ -83,17 +82,17 @@ namespace meshlettest {
 
     struct Common {
       GLuint                    standardVao;
-      nv_helpers_gl::GLBuffer   viewBuffer;
-      nv_helpers_gl::GLBuffer   statsBuffer;
-      nv_helpers_gl::GLBuffer   statsReadBuffer;
+      nvgl::GLBuffer   viewBuffer;
+      nvgl::GLBuffer   statsBuffer;
+      nvgl::GLBuffer   statsReadBuffer;
     };
 
     struct DrawSetup {
-      nv_helpers_gl::GLBuffer   geometryBindings;
+      nvgl::GLBuffer   geometryBindings;
     };
     
-    nv_helpers_gl::ProfilerTimersGL m_gltimers;
-    nv_helpers_gl::ProgramManager   m_progManager;
+    nvgl::ProfilerGL                m_profilerGL;
+    nvgl::ProgramManager            m_progManager;
     ProgramIDs                      m_programids;
     Programs                        m_programs;
 
@@ -107,7 +106,7 @@ namespace meshlettest {
       glFinish();
     }
 
-    bool init(NVPWindow *window) override;
+    bool init(ContextWindow *contextWindow, nvh::Profiler* profiler) override;
     void deinit() override;
     
     bool initPrograms(const std::string& path, const std::string& prepend) override;
@@ -125,11 +124,7 @@ namespace meshlettest {
 
     void blitFrame(const FrameConfig& global) override;
 
-    nv_math::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
-
-    nv_helpers::Profiler::GPUInterface*  getTimerInterface() override { 
-      return &m_gltimers;
-    }
+    nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
 
     void getStats(CullStats& stats) override;
     void copyStats() const;

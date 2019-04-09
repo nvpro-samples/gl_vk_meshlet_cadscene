@@ -29,14 +29,21 @@
 
 #include <platform.h>
 #include "cadscene.hpp"
-#include <nv_helpers_gl/glsltypes_gl.hpp>
-#include <nv_helpers/profiler.hpp>
+#include <nvgl/glsltypes_gl.hpp>
+#include <nvh/profiler.hpp>
+#if HAS_OPENGL
+#include <nvgl/contextwindow_gl.hpp>
+typedef nvgl::ContextWindowGL ContextWindow;
+#else
+#include <nvvk/contextwindow_vk.hpp>
+typedef nvvk::ContextWindowVK ContextWindow;
+#endif   
+
 #include <algorithm>
 
-class NVPWindow;
 struct ImDrawData;
 
-using namespace nv_math;
+using namespace nvmath;
 #include "common.h"
 
 // allows to use mesh renderers without hw support, simply falls back to regular
@@ -80,7 +87,7 @@ namespace meshlettest {
 
     virtual void synchronize() {}
 
-    virtual bool init(NVPWindow *window) { return false; }
+    virtual bool init(ContextWindow* contextWindow, nvh::Profiler* profiler) { return false; }
     virtual void deinit() {}
     
     virtual bool initPrograms(const std::string& path, const std::string& prepend) { return true;}
@@ -97,9 +104,7 @@ namespace meshlettest {
 
     virtual void getStats(CullStats& stats) { }
 
-    virtual nv_math::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const = 0;
-
-    virtual nv_helpers::Profiler::GPUInterface*  getTimerInterface() { return NULL; }
+    virtual nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const = 0;
 
     inline void initAlignedSizes(unsigned int uboAlignment){
       // FIXME could solve differently

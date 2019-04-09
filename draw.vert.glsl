@@ -70,6 +70,7 @@ in layout(location=VERTEX_XTRA)     vec4 xtra[EXTRA_ATTRIBUTES];
 
 layout(location=0) out Interpolants {
   vec3  wPos;
+  float dummy;
   vec3  wNormal;
   flat uint meshletID;
 #if EXTRA_ATTRIBUTES
@@ -88,7 +89,8 @@ void main()
 {
   vec3 wPos     = (object.worldMatrix  * vec4(oPos,1)).xyz;
   gl_Position   = (scene.viewProjMatrix * vec4(wPos,1));
-  OUT.wPos = wPos;
+  OUT.wPos      = wPos;
+  OUT.dummy     = 0.0;
   
 #if USE_CLIPPING
   for (int i = 0; i < NUM_CLIPPING_PLANES; i++){

@@ -28,7 +28,7 @@
 #ifndef CADSCENE_H__
 #define CADSCENE_H__
 
-#include <nv_math/nv_math.h>
+#include <nvmath/nvmath.h>
 #include <vector>
 #include <stdint.h>
 
@@ -41,52 +41,52 @@ class CadScene {
 public:
 
   struct BBox {
-    nv_math::vec4f    min;
-    nv_math::vec4f    max;
+    nvmath::vec4f    min;
+    nvmath::vec4f    max;
 
     BBox() : min(FLT_MAX), max(-FLT_MAX) {}
 
-    inline void merge( const nv_math::vec4f& point )
+    inline void merge( const nvmath::vec4f& point )
     {
-      min = nv_math::nv_min(min, point);
-      max = nv_math::nv_max(max, point);
+      min = nvmath::nv_min(min, point);
+      max = nvmath::nv_max(max, point);
     }
 
     inline void merge( const BBox& bbox )
     {
-      min = nv_math::nv_min(min, bbox.min);
-      max = nv_math::nv_max(max, bbox.max);
+      min = nvmath::nv_min(min, bbox.min);
+      max = nvmath::nv_max(max, bbox.max);
     }
 
-    inline BBox transformed ( const nv_math::mat4f &matrix, int dim=3)
+    inline BBox transformed ( const nvmath::mat4f &matrix, int dim=3)
     {
       int i;
-      nv_math::vec4f box[16];
+      nvmath::vec4f box[16];
       // create box corners
-      box[0] = nv_math::vec4f(min.x,min.y,min.z,min.w);
-      box[1] = nv_math::vec4f(max.x,min.y,min.z,min.w);
-      box[2] = nv_math::vec4f(min.x,max.y,min.z,min.w);
-      box[3] = nv_math::vec4f(max.x,max.y,min.z,min.w);
-      box[4] = nv_math::vec4f(min.x,min.y,max.z,min.w);
-      box[5] = nv_math::vec4f(max.x,min.y,max.z,min.w);
-      box[6] = nv_math::vec4f(min.x,max.y,max.z,min.w);
-      box[7] = nv_math::vec4f(max.x,max.y,max.z,min.w);
+      box[0] = nvmath::vec4f(min.x,min.y,min.z,min.w);
+      box[1] = nvmath::vec4f(max.x,min.y,min.z,min.w);
+      box[2] = nvmath::vec4f(min.x,max.y,min.z,min.w);
+      box[3] = nvmath::vec4f(max.x,max.y,min.z,min.w);
+      box[4] = nvmath::vec4f(min.x,min.y,max.z,min.w);
+      box[5] = nvmath::vec4f(max.x,min.y,max.z,min.w);
+      box[6] = nvmath::vec4f(min.x,max.y,max.z,min.w);
+      box[7] = nvmath::vec4f(max.x,max.y,max.z,min.w);
 
-      box[8] = nv_math::vec4f(min.x,min.y,min.z,max.w);
-      box[9] = nv_math::vec4f(max.x,min.y,min.z,max.w);
-      box[10] = nv_math::vec4f(min.x,max.y,min.z,max.w);
-      box[11] = nv_math::vec4f(max.x,max.y,min.z,max.w);
-      box[12] = nv_math::vec4f(min.x,min.y,max.z,max.w);
-      box[13] = nv_math::vec4f(max.x,min.y,max.z,max.w);
-      box[14] = nv_math::vec4f(min.x,max.y,max.z,max.w);
-      box[15] = nv_math::vec4f(max.x,max.y,max.z,max.w);
+      box[8] = nvmath::vec4f(min.x,min.y,min.z,max.w);
+      box[9] = nvmath::vec4f(max.x,min.y,min.z,max.w);
+      box[10] = nvmath::vec4f(min.x,max.y,min.z,max.w);
+      box[11] = nvmath::vec4f(max.x,max.y,min.z,max.w);
+      box[12] = nvmath::vec4f(min.x,min.y,max.z,max.w);
+      box[13] = nvmath::vec4f(max.x,min.y,max.z,max.w);
+      box[14] = nvmath::vec4f(min.x,max.y,max.z,max.w);
+      box[15] = nvmath::vec4f(max.x,max.y,max.z,max.w);
 
       // transform box corners
       // and find new mins,maxs
       BBox bbox;
 
       for (i = 0; i < (1<<dim) ; i++){
-        nv_math::vec4f point = matrix * box[i];
+        nvmath::vec4f point = matrix * box[i];
         bbox.merge(point);
       }
 
@@ -95,10 +95,10 @@ public:
   };
 
   struct MaterialSide {
-    nv_math::vec4f ambient;
-    nv_math::vec4f diffuse;
-    nv_math::vec4f specular;
-    nv_math::vec4f emissive;
+    nvmath::vec4f ambient;
+    nvmath::vec4f diffuse;
+    nvmath::vec4f specular;
+    nvmath::vec4f emissive;
   };
 
   // need to keep this 256 byte aligned (UBO range)
@@ -113,22 +113,22 @@ public:
 
   // need to keep this 256 byte aligned (UBO range)
   struct MatrixNode {
-    nv_math::mat4f  worldMatrix;
-    nv_math::mat4f  worldMatrixIT;
-    nv_math::mat4f  objectMatrix;
-    nv_math::vec4f  bboxMin;
-    nv_math::vec4f  bboxMax;
-    nv_math::vec3f  _pad0;
+    nvmath::mat4f  worldMatrix;
+    nvmath::mat4f  worldMatrixIT;
+    nvmath::mat4f  objectMatrix;
+    nvmath::vec4f  bboxMin;
+    nvmath::vec4f  bboxMax;
+    nvmath::vec3f  _pad0;
     float           winding;
-    nv_math::vec4f  color;
+    nvmath::vec4f  color;
   };
 
   struct Vertex {
-    nv_math::vec4f position;
+    nvmath::vec4f position;
   };
 
   struct VertexAttributes {
-    nv_math::vec4f normal;
+    nvmath::vec4f normal;
   };
 
   struct VertexFP16 {
@@ -246,6 +246,7 @@ public:
     bool      verbose = true;
     bool      fp16 = false;
     bool      allowShorts = true;
+    bool      colorizeExtra = false;
     uint32_t  extraAttributes = 0;
 
     // must not change order

@@ -27,19 +27,21 @@
 
 #include <imgui/imgui_impl_vk.h>
 
-#include <main.h>
 #include <algorithm>
 
 #if HAS_OPENGL
-#include <nv_helpers_gl/extensions_gl.hpp>
+#include <nvgl/extensions_gl.hpp>
 #endif
+#include <nvh/nvprint.hpp>
 
 #include "nvmeshlet_builder.hpp"
 
 extern bool vulkanInitLibrary();
-using namespace nv_helpers_gl;
+using namespace nvgl;
 
 namespace meshlettest {
+
+  extern void setupVulkanContextInfo(nvvk::ContextInfoVK& info);
 
 
   bool ResourcesVK::isAvailable()
@@ -100,6 +102,8 @@ namespace meshlettest {
   void ResourcesVK::blitFrame(const FrameConfig& global)
   {
     VkCommandBuffer cmd = createTempCmdBuffer();
+
+    nvh::Profiler::SectionID sec = m_profilerVK.beginSection("BltUI", cmd);
 
     VkImage imageBlitRead = m_framebuffer.imgColor;
 
@@ -198,6 +202,8 @@ namespace meshlettest {
         VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     }
 
+    m_profilerVK.endSection(sec, cmd);
+
     vkEndCommandBuffer(cmd);
     submissionEnqueue(cmd);
   }
@@ -238,24 +244,19 @@ namespace meshlettest {
     m_memAllocator.unmap(m_common.statsReadAID);
   }
 
-  bool ResourcesVK::init(NVPWindow *window)
+  bool ResourcesVK::init(ContextWindow* contextWindow, nvh::Profiler* profiler)
   {
-    m_framebuffer.msaa = 0;
     m_fboIncarnation = 0;
     m_pipeIncarnation = 0;
 
 #if HAS_OPENGL
     {
-      VkPhysicalDeviceMeshShaderFeaturesNV meshFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
-      nv_helpers_vk::BasicContextInfo  info;
-      info.addDeviceExtension(VK_NV_GLSL_SHADER_EXTENSION_NAME, true); // flag as optional, but internally driver still supports it
-      info.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeatures);
-      info.apiMajor = 1;
-      info.apiMinor = 1;
-      info.device = s_vkDevice;
+      nvvk::ContextInfoVK  info;
+      info.device = Resources::s_vkDevice;
+      setupVulkanContextInfo(info);
 
       if (!info.initDeviceContext(m_ctxContent)) {
-        LOGE("vulkan device create failed (use debug build for more information)\n");
+        LOGI("vulkan device create failed (use debug build for more information)\n");
         exit(-1);
         return false;
       }
@@ -276,13 +277,11 @@ namespace meshlettest {
     }
 #else
     {
-      const nv_helpers_vk::BasicWindow* winvk = window->getBasicWindowVK();
-      m_ctx = &winvk->m_context;
-      m_queue = winvk->m_presentQueue;
-      m_queueFamily = winvk->m_presentQueueFamily;
-      m_swapChain = &winvk->m_swapChain;
+      m_ctx = &contextWindow->m_context;
+      m_queue = contextWindow->m_presentQueue;
+      m_queueFamily = contextWindow->m_presentQueueFamily;
+      m_swapChain = &contextWindow->m_swapChain;
     }
-    
 #endif
 
     m_physical = &m_ctx->m_physicalInfo;
@@ -295,8 +294,11 @@ namespace meshlettest {
 
     m_nativeMeshSupport = m_ctx->hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME) && load_VK_NV_mesh_shader(m_ctx->m_device, vkGetDeviceProcAddr) != 0;
 
+        m_profilerVK = nvvk::ProfilerVK(profiler);
+    m_profilerVK.init(m_device, m_physical->physicalDevice, m_allocator);
+
     // submission queue
-    m_submission.setQueue(m_queue);
+    m_submission.init(m_queue);
 
     // fences
     m_ringFences.init(m_device, m_allocator);
@@ -316,22 +318,22 @@ namespace meshlettest {
     {
       // common
 
-      VkBufferCreateInfo viewCreate = makeBufferCreateInfo(sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+      VkBufferCreateInfo viewCreate = nvvk::makeBufferCreateInfo(sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       m_memAllocator.create(viewCreate, m_common.viewBuffer, m_common.viewAID);
-      m_common.viewInfo = makeDescriptorBufferInfo(m_common.viewBuffer, sizeof(SceneData));
+      m_common.viewInfo = {m_common.viewBuffer, 0, sizeof(SceneData)};
 
-      VkBufferCreateInfo statsCreate = makeBufferCreateInfo(sizeof(CullStats), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+      VkBufferCreateInfo statsCreate = nvvk::makeBufferCreateInfo(sizeof(CullStats), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
       m_memAllocator.create(statsCreate, m_common.statsBuffer, m_common.statsAID);
-      m_common.statsInfo = makeDescriptorBufferInfo(m_common.statsBuffer, sizeof(CullStats));
+      m_common.statsInfo = {m_common.statsBuffer, 0, sizeof(CullStats)};
 
-      VkBufferCreateInfo statsReadCreate = makeBufferCreateInfo(sizeof(CullStats) * nv_helpers_vk::MAX_RING_FRAMES, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+      VkBufferCreateInfo statsReadCreate = nvvk::makeBufferCreateInfo(sizeof(CullStats) * nvvk::MAX_RING_FRAMES, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
       m_memAllocator.create(statsReadCreate, m_common.statsReadBuffer, m_common.statsReadAID, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
-      m_common.statsReadInfo = makeDescriptorBufferInfo(m_common.statsReadBuffer, sizeof(CullStats) * nv_helpers_vk::MAX_RING_FRAMES);
+      m_common.statsReadInfo =
+          {m_common.statsReadBuffer, 0, sizeof(CullStats) * nvvk::MAX_RING_FRAMES};
     }
 
-    initTimers(nv_helpers::Profiler::START_TIMERS);
-
     {
+
       ///////////////////////////////////////////////////////////////////////////////////////////
       {
         // REGULAR
@@ -340,11 +342,12 @@ namespace meshlettest {
 
         auto& bindingsScene = setup.container.descriptorBindings[DSET_SCENE];
         // UBO SCENE
-        bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT));
+        bindingsScene.push_back({0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0});
         setup.container.initSetLayout(DSET_SCENE);
         // UBO OBJECT
         auto& bindingsObject = setup.container.descriptorBindings[DSET_OBJECT];
-        bindingsObject.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT));
+        bindingsObject.push_back({
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0});
         setup.container.initSetLayout(DSET_OBJECT);
 
         setup.container.pipelineLayouts[0] = createPipelineLayout(2, setup.container.descriptorSetLayout);
@@ -356,19 +359,26 @@ namespace meshlettest {
         setup.container.init(m_device, m_allocator);
         // UBO SCENE
         auto& bindingsScene = setup.container.descriptorBindings[DSET_SCENE];
-        bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT));
+        bindingsScene.push_back({
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0});
         setup.container.initSetLayout(DSET_SCENE);
         // UBO OBJECT
         auto& bindingsObject = setup.container.descriptorBindings[DSET_OBJECT];
-        bindingsObject.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT));
+        bindingsObject.push_back({
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0});
         setup.container.initSetLayout(DSET_OBJECT);
         // UBO GEOMETRY
         auto& bindingsGeometry = setup.container.descriptorBindings[DSET_GEOMETRY];
-        bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_SSBO_MESHLETDESC));
-        bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_SSBO_PRIM));
-        bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_TEX_IBO));
-        bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_TEX_VBO));
-        bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, GEOMETRY_TEX_ABO));
+        bindingsGeometry.push_back({GEOMETRY_SSBO_MESHLETDESC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                                                        1, VK_SHADER_STAGE_VERTEX_BIT, 0});
+        bindingsGeometry.push_back({GEOMETRY_SSBO_PRIM,
+                                                                        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0});
+        bindingsGeometry.push_back({GEOMETRY_TEX_IBO,
+                                                                        VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0});
+        bindingsGeometry.push_back({GEOMETRY_TEX_VBO,
+                                                                        VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0});
+        bindingsGeometry.push_back({GEOMETRY_TEX_ABO,
+                                                                        VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0});
         
         setup.container.initSetLayout(DSET_GEOMETRY);
 
@@ -394,30 +404,41 @@ namespace meshlettest {
           setup.container.init(m_device, m_allocator);
           // UBO SCENE
           auto& bindingsScene = setup.container.descriptorBindings[DSET_SCENE];
-          bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, SCENE_UBO_VIEW));
-          bindingsScene.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageTask | stageMesh, SCENE_SSBO_STATS));
+          bindingsScene.push_back({SCENE_UBO_VIEW, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0});
+          bindingsScene.push_back({SCENE_SSBO_STATS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageTask | stageMesh, 0});
           setup.container.initSetLayout(DSET_SCENE);
           // UBO OBJECT
           auto& bindingsObject = setup.container.descriptorBindings[DSET_OBJECT];
-          bindingsObject.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT));
+          bindingsObject.push_back({
+              0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0});
           setup.container.initSetLayout(DSET_OBJECT);
           // UBO GEOMETRY
           auto& bindingsGeometry = setup.container.descriptorBindings[DSET_GEOMETRY];
-          bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageTask | stageMesh, GEOMETRY_SSBO_MESHLETDESC));
-          bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageMesh, GEOMETRY_SSBO_PRIM));
-          bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, stageMesh, GEOMETRY_TEX_IBO));
-          bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, stageMesh, GEOMETRY_TEX_VBO));
-          bindingsGeometry.push_back(makeDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, stageMesh, GEOMETRY_TEX_ABO));
+          bindingsGeometry.push_back({GEOMETRY_SSBO_MESHLETDESC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                                                          1, stageTask | stageMesh, 0});
+          bindingsGeometry.push_back({GEOMETRY_SSBO_PRIM, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                                                          1, stageMesh, 0});
+          bindingsGeometry.push_back({GEOMETRY_TEX_IBO,
+                                                                          VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, stageMesh, 0});
+          bindingsGeometry.push_back({GEOMETRY_TEX_VBO,
+                                                                          VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, stageMesh, 0});
+          bindingsGeometry.push_back({GEOMETRY_TEX_ABO,
+                                                                          VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, stageMesh, 0});
           setup.container.initSetLayout(DSET_GEOMETRY);
 
           VkPushConstantRange ranges[2];
+        #if USE_PER_GEOMETRY_VIEWS
           ranges[0].offset = (USE_PER_GEOMETRY_VIEWS ? 0 : sizeof(uint32_t) * 4);
           ranges[0].size = sizeof(uint32_t) * 4;
           ranges[0].stageFlags = VK_SHADER_STAGE_TASK_BIT_NV;
+        #else
+          ranges[0].offset = 0;
+          ranges[0].size = sizeof(uint32_t) * 8;
+          ranges[0].stageFlags = VK_SHADER_STAGE_TASK_BIT_NV;
           ranges[1].offset = 0;
           ranges[1].size = sizeof(uint32_t) * 4;
-          ranges[1].stageFlags = VK_SHADER_STAGE_TASK_BIT_NV | VK_SHADER_STAGE_MESH_BIT_NV;
-
+          ranges[1].stageFlags = VK_SHADER_STAGE_MESH_BIT_NV;
+        #endif
           setup.container.pipelineLayouts[0] = createPipelineLayout(3, setup.container.descriptorSetLayout, USE_PER_GEOMETRY_VIEWS ? 1 : 2, ranges);
         }
 
@@ -454,7 +475,8 @@ namespace meshlettest {
     deinitFramebuffer();
     deinitPipes();
     deinitPrograms();
-    deinitTimers();
+    
+    m_profilerVK.deinit();
 
     vkDestroyRenderPass(m_device, m_framebuffer.passClear, NULL);
     vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, NULL);
@@ -480,8 +502,8 @@ namespace meshlettest {
 
   bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepend)
   {
-    m_shaderManager.m_device = m_device;
-    m_shaderManager.m_filetype = nv_helpers::ShaderFileManager::FILETYPE_GLSL;
+    m_shaderManager.init(m_device);
+    m_shaderManager.m_filetype = nvh::ShaderFileManager::FILETYPE_GLSL;
     m_shaderManager.m_useNVextension = s_vkNVglslExtension;
 
     m_shaderManager.addDirectory(path);
@@ -497,21 +519,21 @@ namespace meshlettest {
 
     ///////////////////////////////////////////////////////////////////////////////////////////
     {
-      m_shaders.object_vertex = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_VERTEX_BIT, "draw.vert.glsl"));
-      m_shaders.object_fragment = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_FRAGMENT_BIT, "draw.frag.glsl"));
+      m_shaders.object_vertex = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_VERTEX_BIT, "draw.vert.glsl"));
+      m_shaders.object_fragment = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_FRAGMENT_BIT, "draw.frag.glsl"));
     }
 
     {
-      m_shaders.bbox_vertex = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_VERTEX_BIT, "meshletbbox.vert.glsl"));
-      m_shaders.bbox_geometry = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_GEOMETRY_BIT, "meshletbbox.geo.glsl"));
-      m_shaders.bbox_fragment = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_FRAGMENT_BIT, "meshletbbox.frag.glsl"));
+      m_shaders.bbox_vertex = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_VERTEX_BIT, "meshletbbox.vert.glsl"));
+      m_shaders.bbox_geometry = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_GEOMETRY_BIT, "meshletbbox.geo.glsl"));
+      m_shaders.bbox_fragment = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_FRAGMENT_BIT, "meshletbbox.frag.glsl"));
     }
 
     if (m_nativeMeshSupport)
     {
-      m_shaders.object_mesh = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_MESH_BIT_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet.mesh.glsl"));
-      m_shaders.object_task_mesh = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_MESH_BIT_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet.mesh.glsl"));
-      m_shaders.object_task = m_shaderManager.createShaderModule(nv_helpers::ShaderFileManager::Definition(VK_SHADER_STAGE_TASK_BIT_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet.task.glsl"));
+      m_shaders.object_mesh = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_MESH_BIT_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet.mesh.glsl"));
+      m_shaders.object_task_mesh = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_MESH_BIT_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet.mesh.glsl"));
+      m_shaders.object_task = m_shaderManager.createShaderModule(nvh::ShaderFileManager::Definition(VK_SHADER_STAGE_TASK_BIT_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet.task.glsl"));
     }
     ///////////////////////////////////////////////////////////////////////////////////////////
 
@@ -696,7 +718,7 @@ namespace meshlettest {
     cbImageInfo.flags = 0;
     cbImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    result = m_framebuffer.memAllocator.create(cbImageInfo, m_framebuffer.imgColor, nv_helpers_vk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, useDedicated);
+    result = m_framebuffer.memAllocator.create(cbImageInfo, m_framebuffer.imgColor, nvvk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, useDedicated);
     assert(result == VK_SUCCESS);
 
     // depth stencil
@@ -717,7 +739,7 @@ namespace meshlettest {
     dsImageInfo.flags = 0;
     dsImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    result = m_framebuffer.memAllocator.create(dsImageInfo, m_framebuffer.imgDepthStencil, nv_helpers_vk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, useDedicated);
+    result = m_framebuffer.memAllocator.create(dsImageInfo, m_framebuffer.imgDepthStencil, nvvk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, useDedicated);
     assert(result == VK_SUCCESS);
 
     if (m_framebuffer.useResolved) {
@@ -736,7 +758,7 @@ namespace meshlettest {
       resImageInfo.flags = 0;
       resImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-      result = m_framebuffer.memAllocator.create(resImageInfo, m_framebuffer.imgColorResolved, nv_helpers_vk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, useDedicated);
+      result = m_framebuffer.memAllocator.create(resImageInfo, m_framebuffer.imgColorResolved, nvvk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, useDedicated);
       assert(result == VK_SUCCESS);
     }
 
@@ -1142,104 +1164,7 @@ namespace meshlettest {
       }
     }
   }
-
-
-  nv_helpers::Profiler::GPUInterface* ResourcesVK::getTimerInterface()
-  {
-#if 1
-    if (m_timeStampsSupported) return this;
-#endif
-    return 0;
-  }
-
-  const char* ResourcesVK::TimerTypeName()
-  {
-    return "VK ";
-  }
-
-  bool ResourcesVK::TimerAvailable(nv_helpers::Profiler::TimerIdx idx)
-  {
-    return true; // let's hope 8 frames are enough to avoid syncs for now
-  }
-
-  void ResourcesVK::TimerSetup(nv_helpers::Profiler::TimerIdx idx)
-  {
-    VkResult result = VK_ERROR_INITIALIZATION_FAILED;
-
-    VkCommandBuffer timerCmd = createTempCmdBuffer();
-
-    vkCmdResetQueryPool(timerCmd, m_timePool, idx, 1); // not ideal to do this per query
-    vkCmdWriteTimestamp(timerCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, m_timePool, idx);
-
-    result = vkEndCommandBuffer(timerCmd);
-    assert(result == VK_SUCCESS);
-    
-    submissionEnqueue(timerCmd);
-  }
-
-  void ResourcesVK::TimerSetup(nv_helpers::Profiler::TimerIdx idx, void* payload)
-  {
-    VkCommandBuffer timerCmd = (VkCommandBuffer)payload;
-    vkCmdResetQueryPool(timerCmd, m_timePool, idx, 1); // not ideal to do this per query
-    vkCmdWriteTimestamp(timerCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, m_timePool, idx);
-  }
-
-  unsigned long long ResourcesVK::TimerResult(nv_helpers::Profiler::TimerIdx idxBegin, nv_helpers::Profiler::TimerIdx idxEnd)
-  {
-    uint64_t end = 0;
-    uint64_t begin = 0;
-    vkGetQueryPoolResults(m_device, m_timePool, idxEnd,   1, sizeof(uint64_t), &end,   0, VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT);
-    vkGetQueryPoolResults(m_device, m_timePool, idxBegin, 1, sizeof(uint64_t), &begin, 0, VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT);
-
-    return uint64_t(double(end - begin) * m_timeStampFrequency);
-  }
-
-  void ResourcesVK::TimerEnsureSize(unsigned int slots)
-  {
-    
-  }
-
-
-  void ResourcesVK::TimerFlush()
-  {
-    // execute what we have gathered so far
-    submissionExecute(NULL,true,false);
-  }
-
-  void ResourcesVK::initTimers(unsigned int numEntries)
-  {
-    VkResult result = VK_ERROR_INITIALIZATION_FAILED;
-    m_timeStampsSupported = m_physical->queueProperties[0].timestampValidBits;
-
-    if (m_timeStampsSupported)
-    {
-      m_timeStampFrequency = double(m_physical->properties.limits.timestampPeriod);
-    }
-    else
-    {
-      return;
-    }
-
-    if (m_timePool){
-      deinitTimers();
-    }
-
-    VkQueryPoolCreateInfo queryInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
-    queryInfo.queryCount = numEntries;
-    queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-    result = vkCreateQueryPool(m_device, &queryInfo, NULL, &m_timePool);
-  }
-
-  void ResourcesVK::deinitTimers()
-  {
-    if (!m_timeStampsSupported) return;
-
-    vkDestroyQueryPool(m_device, m_timePool, NULL);
-    m_timePool = NULL;
-  }
-
-
-
+  
   void ResourcesVK::deinitPipes()
   {
     vkDestroyPipeline(m_device, m_setupRegular.pipeline, NULL);
@@ -1340,8 +1265,8 @@ namespace meshlettest {
     VkImageLayout newLayout) const
   {
 
-    VkPipelineStageFlags srcPipe = makeAccessMaskPipelineStageFlags(src);
-    VkPipelineStageFlags dstPipe = makeAccessMaskPipelineStageFlags(dst);
+    VkPipelineStageFlags srcPipe = nvvk::makeAccessMaskPipelineStageFlags(src);
+    VkPipelineStageFlags dstPipe = nvvk::makeAccessMaskPipelineStageFlags(dst);
 
     VkImageSubresourceRange range;
     memset(&range,0,sizeof(range));
@@ -1440,57 +1365,6 @@ namespace meshlettest {
         resetTempResources();
       }
     }
-  }
-
-  void ResourcesVK::fillBuffer(nv_helpers_vk::BasicStagingBuffer& staging, VkBuffer buffer, size_t offset, size_t size, const void* data)
-  {
-    if (!size) return;
-
-    if (staging.cannotEnqueue(size)) {
-      staging.flush(this, true);
-    }
-
-    staging.enqueue(buffer, offset, size, data);
-  }
-
-  VkBuffer ResourcesVK::createBuffer(size_t size, VkFlags usage, VkDeviceMemory &bufferMem, VkFlags memProps)
-  {
-    VkResult result;
-    VkBuffer buffer;
-    VkBufferCreateInfo bufferInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    bufferInfo.size = size;
-    bufferInfo.usage = usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.flags = 0;
-
-    result = vkCreateBuffer(m_device, &bufferInfo, NULL, &buffer);
-    assert(result == VK_SUCCESS);
-
-    result = allocMemAndBindBuffer(buffer, bufferMem, memProps);
-    assert(result == VK_SUCCESS);
-
-    return buffer;
-  }
-
-  VkBuffer ResourcesVK::createAndFillBuffer(nv_helpers_vk::BasicStagingBuffer& staging, size_t size, const void* data, VkFlags usage, VkDeviceMemory &bufferMem, VkFlags memProps)
-  {
-    VkResult result;
-    VkBuffer buffer;
-    VkBufferCreateInfo bufferInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-    bufferInfo.size  = size;
-    bufferInfo.usage = usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.flags = 0;
-
-    result = vkCreateBuffer(m_device, &bufferInfo, NULL, &buffer);
-    assert(result == VK_SUCCESS);
-    
-    result = allocMemAndBindBuffer(buffer, bufferMem, memProps);
-    assert(result == VK_SUCCESS);
-
-    if (data){
-      fillBuffer(staging, buffer, 0, size, data);
-    }
-
-    return buffer;
   }
   
   bool ResourcesVK::initScene(const CadScene& cadscene)
@@ -1643,11 +1517,11 @@ namespace meshlettest {
     vkDeviceWaitIdle(m_device);
   }
 
-  nv_math::mat4f ResourcesVK::perspectiveProjection( float fovy, float aspect, float nearPlane, float farPlane) const
+  nvmath::mat4f ResourcesVK::perspectiveProjection( float fovy, float aspect, float nearPlane, float farPlane) const
   {
     // vulkan uses DX style 0,1 z clipspace
 
-    nv_math::mat4f M;
+    nvmath::mat4f M;
     float r, l, b, t;
     float f = farPlane;
     float n = nearPlane;
