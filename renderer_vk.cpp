@@ -123,7 +123,7 @@ namespace meshlettest
         
           if (first){
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(),
-              DSET_SCENE, 1, setup.container.getSets(DSET_SCENE), 0, NULL);
+              DSET_SCENE, 1, setup.container.at(DSET_SCENE).getSets(), 0, NULL);
           }
 
           first = false;
@@ -143,7 +143,7 @@ namespace meshlettest
         {
           uint32_t offset = di.matrixIndex * res->m_alignedMatrixSize;
           vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(),
-            DSET_OBJECT, 1, setup.container.getSets(DSET_OBJECT), 1, &offset);
+            DSET_OBJECT, 1, setup.container.at(DSET_OBJECT).getSets(), 1, &offset);
           lastMatrix = di.matrixIndex;
         }
       

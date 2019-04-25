@@ -132,7 +132,7 @@ namespace meshlettest
         
           if (first){
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(),
-              DSET_SCENE, 1, setup.container.getSets(DSET_SCENE), 0, nullptr);
+              DSET_SCENE, 1, setup.container.at(DSET_SCENE).getSets(), 0, nullptr);
           }
 
           first = false;
@@ -147,12 +147,12 @@ namespace meshlettest
 
         #if USE_PER_GEOMETRY_VIEWS
           vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(),
-            DSET_GEOMETRY, 1, setup.container.getSets(DSET_GEOMETRY) + di.geometryIndex, 0, nullptr);
+            DSET_GEOMETRY, 1, setup.container.at(DSET_GEOMETRY).getSets() + di.geometryIndex, 0, nullptr);
         #else
           if (chunk != lastChunk || di.shorts != lastShorts) {
             int idx = chunk * 2 + (di.shorts ? 1 : 0);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(),
-              DSET_GEOMETRY, 1, setup.container.getSets(DSET_GEOMETRY) + idx, 0, nullptr);
+              DSET_GEOMETRY, 1, setup.container.at(DSET_GEOMETRY).getSets() + idx, 0, nullptr);
 
             lastChunk = chunk;
             lastShorts = di.shorts;
@@ -178,7 +178,7 @@ namespace meshlettest
         {
           uint32_t offset = di.matrixIndex    * res->m_alignedMatrixSize;
           vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(),
-            DSET_OBJECT, 1, setup.container.getSets(DSET_OBJECT), 1, &offset);
+            DSET_OBJECT, 1, setup.container.at(DSET_OBJECT).getSets(), 1, &offset);
           lastMatrix = di.matrixIndex;
         }
 

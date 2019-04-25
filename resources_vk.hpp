@@ -127,9 +127,9 @@ public:
 
   struct DrawSetup
   {
-    TNulled<VkPipeline>                      pipeline;
-    TNulled<VkPipeline>                      pipelineNoTask;
-    nvvk::DescriptorSetContainer<DSET_COUNT> container;
+    TNulled<VkPipeline>                       pipeline;
+    TNulled<VkPipeline>                       pipelineNoTask;
+    nvvk::TDescriptorSetContainer<DSET_COUNT> container;
   };
 
 
