@@ -27,7 +27,7 @@
 
 
 #include "cadscene.hpp"
-#include "cadscenefile.h"
+#include <fileformats/cadscenefile.h>
 
 #include "config.h"
 #include "nvmeshlet_builder.hpp"
@@ -84,7 +84,7 @@ NV_INLINE void floatToHalfVector(half output[4], const nvmath::vec4f& input)
 nvmath::vec4f randomVector(float from, float to)
 {
   nvmath::vec4f vec;
-  float          width = to - from;
+  float         width = to - from;
   for(int i = 0; i < 4; i++)
   {
     vec.vec_array[i] = from + (float(rand()) / float(RAND_MAX)) * width;
@@ -216,8 +216,9 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
         floatToHalfVector(vertex->position, position);
         floatToHalfVector(attribute->normal, normal);
-      
-        for (uint32_t i = 0;  m_cfg.colorizeExtra && i < m_cfg.extraAttributes; i++) {
+
+        for(uint32_t i = 0; m_cfg.colorizeExtra && i < m_cfg.extraAttributes; i++)
+        {
           floatToHalfVector(attribute[1 + i].normal, nvmath::vec4f(0, 1, 0, 0) * 0.1f);
         }
 
@@ -245,7 +246,8 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
         vertex->position  = position;
         attribute->normal = normal;
 
-        for (uint32_t i = 0; m_cfg.colorizeExtra && i < m_cfg.extraAttributes; i++) {
+        for(uint32_t i = 0; m_cfg.colorizeExtra && i < m_cfg.extraAttributes; i++)
+        {
           attribute[1 + i].normal = nvmath::vec4f(0, 1, 0, 0) * 0.1f;
         }
 
@@ -401,7 +403,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
   // compute clone move delta based on m_bbox;
 
   nvmath::vec4f dim = m_bbox.max - m_bbox.min;
-  m_bboxInstanced = m_bbox;
+  m_bboxInstanced   = m_bbox;
 
   int sq      = 1;
   int numAxis = 0;

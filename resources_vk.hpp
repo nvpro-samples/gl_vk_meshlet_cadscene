@@ -31,33 +31,25 @@
 #include "cadscene_vk.hpp"
 #include "resources.hpp"
 
-#include <nvh/tnulled.hpp>
-#include <nvvk/barrier_vk.hpp>
-#include <nvvk/contextwindow_vk.hpp>
-#include <nvvk/descriptorsetcontainer_vk.hpp>
-#include <nvvk/deviceutils_vk.hpp>
-#include <nvvk/error_vk.hpp>
-#include <nvvk/extensions_vk.hpp>
-#include <nvvk/makers_vk.hpp>
-#include <nvvk/memorymanagement_vk.hpp>
-#include <nvvk/physical_vk.hpp>
+#include <nvvk/context_vk.hpp>
 #include <nvvk/profiler_vk.hpp>
-#include <nvvk/ringresources_vk.hpp>
 #include <nvvk/shadermodulemanager_vk.hpp>
-#include <nvvk/staging_vk.hpp>
-#include <nvvk/submission_vk.hpp>
 #include <nvvk/swapchain_vk.hpp>
+
+#include <nvvk/buffers_vk.hpp>
+#include <nvvk/commands_vk.hpp>
+#include <nvvk/descriptorsets_vk.hpp>
+#include <nvvk/error_vk.hpp>
+#include <nvvk/memorymanagement_vk.hpp>
+#include <nvvk/renderpasses_vk.hpp>
 
 class NVPWindow;
 
 #define DSET_COUNT 3
 
 namespace meshlettest {
-template <typename T>
-using TNulled = nvh::TNulled<T>;
 
-
-class ResourcesVK : public Resources, public nvvk::DeviceUtils, public TempSubmissionInterface
+class ResourcesVK : public Resources
 {
 public:
   struct FrameBuffer
@@ -89,7 +81,7 @@ public:
     VkImageView viewColorResolved = VK_NULL_HANDLE;
     VkImageView viewDepthStencil  = VK_NULL_HANDLE;
 
-    nvvk::BlockDeviceMemoryAllocator memAllocator;
+    nvvk::DeviceMemoryAllocator memAllocator;
   };
 
   struct Common
@@ -109,11 +101,14 @@ public:
 
   struct ShaderModuleIDs
   {
-    nvvk::ShaderModuleManager::ShaderModuleID object_vertex, object_fragment,
-
-        object_mesh, object_task_mesh, object_task,
-
-        bbox_vertex, bbox_geometry, bbox_fragment;
+    nvvk::ShaderModuleID object_vertex;
+    nvvk::ShaderModuleID object_fragment;
+    nvvk::ShaderModuleID object_mesh;
+    nvvk::ShaderModuleID object_task_mesh;
+    nvvk::ShaderModuleID object_task;
+    nvvk::ShaderModuleID bbox_vertex;
+    nvvk::ShaderModuleID bbox_geometry;
+    nvvk::ShaderModuleID bbox_fragment;
   };
 
   enum DrawMode
@@ -127,8 +122,8 @@ public:
 
   struct DrawSetup
   {
-    TNulled<VkPipeline>                       pipeline;
-    TNulled<VkPipeline>                       pipelineNoTask;
+    VkPipeline                                pipeline       = VK_NULL_HANDLE;
+    VkPipeline                                pipelineNoTask = VK_NULL_HANDLE;
     nvvk::TDescriptorSetContainer<DSET_COUNT> container;
   };
 
@@ -140,29 +135,31 @@ public:
   ShaderModuleIDs           m_shaders;
 
 #if HAS_OPENGL
-  nvvk::InstanceDeviceContext m_ctxContent;
-  VkSemaphore                 m_semImageWritten;
-  VkSemaphore                 m_semImageRead;
+  //nvvk::Context m_ctxContent;
+  VkSemaphore   m_semImageWritten;
+  VkSemaphore   m_semImageRead;
+  nvvk::Context m_contextInstance;
 #else
   const nvvk::SwapChain* m_swapChain;
 #endif
-  const nvvk::InstanceDeviceContext* m_ctx;
-  const nvvk::PhysicalInfo*          m_physical;
-  VkQueue                            m_queue;
-  uint32_t                           m_queueFamily;
+  nvvk::Context* m_context = nullptr;
 
-  nvvk::BlockDeviceMemoryAllocator m_memAllocator;
+  VkDevice                     m_device    = VK_NULL_HANDLE;
+  VkPhysicalDevice             m_physical;
+  VkQueue                      m_queue;
+  uint32_t                     m_queueFamily;
+
+  nvvk::DeviceMemoryAllocator m_memAllocator;
+  nvvk::RingFences            m_ringFences;
+  nvvk::RingCmdPool           m_ringCmdPool;
+
+
+  nvvk::BatchSubmission m_submission;
+  bool                  m_submissionWaitForRead;
 
   FrameBuffer m_framebuffer;
-
-  nvvk::RingFences  m_ringFences;
-  nvvk::RingCmdPool m_ringCmdPool;
-
-  bool             m_submissionWaitForRead;
-  nvvk::BatchSubmission m_submission;
-
-  Common     m_common;
-  CadSceneVK m_scene;
+  Common      m_common;
+  CadSceneVK  m_scene;
 
   DrawSetup m_setupRegular;
   DrawSetup m_setupBbox;
@@ -170,8 +167,8 @@ public:
 
   nvvk::ProfilerVK m_profilerVK;
 
-  size_t m_pipeIncarnation;
-  size_t m_fboIncarnation;
+  size_t m_pipeChangeID;
+  size_t m_fboChangeID;
 
   ResourcesVK() {}
 
@@ -183,7 +180,11 @@ public:
   }
   static bool ResourcesVK::isAvailable();
 
-  bool init(ContextWindow* contextWindow, nvh::Profiler* profiler) override;
+#if HAS_OPENGL
+  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler);
+#else
+  bool                   init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::Profiler* profiler);
+#endif
   void deinit() override;
 
   void initPipes();
@@ -213,25 +214,15 @@ public:
 
   nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
 
-  VkCommandBuffer tempSubmissionCreateCommandBuffer(bool primary, VkQueueFlags preferredQueue = 0) override;
-  void            tempSubmissionEnqueue(VkCommandBuffer cmd, VkQueueFlags preferredQueue = 0) override;
-  void tempSubmissionSubmit(bool sync, VkFence fence = 0, VkQueueFlags preferredQueue = 0, uint32_t deviceMask = 0) override;
-
   //////////////////////////////////////////////////////////////////////////
 
   VkRenderPass createPass(bool clear, int msaa);
   VkRenderPass createPassUI(int msaa);
-  
+
   VkCommandBuffer createCmdBuffer(VkCommandPool pool, bool singleshot, bool primary, bool secondaryInClear) const;
   VkCommandBuffer createTempCmdBuffer(bool primary = true, bool secondaryInClear = false);
 
   VkCommandBuffer createBoundingBoxCmdBuffer(VkCommandPool pool, const class RenderList* NV_RESTRICT list) const;
-
-
-  VkResult allocMemAndBindBuffer(VkBuffer obj, VkDeviceMemory& gpuMem, VkFlags memProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-  {
-    return DeviceUtils::allocMemAndBindBuffer(obj, m_physical->memoryProperties, gpuMem, memProps);
-  }
 
   // submit for batched execution
   void submissionEnqueue(VkCommandBuffer cmdbuffer) { m_submission.enqueue(cmdbuffer); }

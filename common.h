@@ -85,6 +85,7 @@
 #ifdef __cplusplus
 namespace meshlettest
 {
+  using namespace nvmath;
 #endif
 
 struct SceneData {

@@ -8,7 +8,7 @@ This sample demonstrates rendering of models with many triangles using mesh shad
 
 The new pipeline, as shown above, is explained in further detail in this [blog post](https://devblogs.nvidia.com/introduction-turing-mesh-shaders/). We highly recommend going through that material first.
 
-> **Note** This sample currently makes use of NVIDIA specific extensions to be able to use OpenGL and Vulkan at the same time. However we also provide a cmake build option to remove the OpenGL support and instead use Vulkan's WSI swapbuffers. It is recommanded to use the Vulkan stand-alone mode for Vulkan performance investigation and debugging.
+> **Note** This sample currently builds two executables: gl_vk_... has both GL and Vulkan within the same GL window using a NVIDIA extension, the vk_... one uses WSI and pure Vulkan. There is also a cmake build option to remove the gl_vk_ exe and build the only the vk_ exe. For Vulkan it is recommanded to use the Vulkan stand-alone exe for Vulkan performance investigation and debugging.
 
 ### Sample Overview
 
@@ -133,7 +133,7 @@ We test the impact of a few configurations:
 - **clipping:** Enables the three user clipplanes and disables backface culling. This adds implicit vertex outputs and allows more culling done in the task shader. Per-primitive culling in the mesh shader does not take the planes into account as we can assume most work is done in task shader for that. Both test scenes were prepared to cull roughly the same percentage in triangles when clipping is enabled.
 
 ### Vulkan Results
-The application was built using the `BUILD_<projectname>_VULKAN_ONLY` cmake option.
+The vk only exe was used.
 
 #### worldcar, high frustum culling
 
@@ -263,7 +263,7 @@ At the cost of some additional latency you can extend this to a total of `32 * 3
 ## Building
 Make sure to have installed the [Vulkan-SDK](http://lunarg.com/vulkan-sdk/) (1.1.85.0 or higher). Always use 64-bit build configurations.
 
-For best Vulkan performance use the `BUILD_<projectname>_VULKAN_ONLY` cmake option, and built the exe without OpenGL support.
+For best Vulkan performance use the vk exe (starting with vk_). If you are not interested in building the OpenGL & Vulkan combined exe then use the `BUILD_<projectname>_VULKAN_ONLY` cmake option.
 
 Ideally clone this and other interesting [nvpro-samples](https://github.com/nvpro-samples) repositories into a common subdirectory. You will always need [shared_sources](https://github.com/nvpro-samples/shared_sources) and on Windows [shared_external](https://github.com/nvpro-samples/shared_external). The shared directories are searched either as subdirectory of the sample or one directory up.
 

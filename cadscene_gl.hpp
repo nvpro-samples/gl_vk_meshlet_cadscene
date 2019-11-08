@@ -32,54 +32,58 @@
 #include <nvgl\base_gl.hpp>
 
 
-class GeometryMemoryGL {
+class GeometryMemoryGL
+{
 public:
   typedef size_t Index;
 
-  struct Allocation {
-    Index     chunkIndex;
-    size_t    vboOffset;
-    size_t    aboOffset;
-    size_t    iboOffset;
-    size_t    meshOffset;
+  struct Allocation
+  {
+    Index  chunkIndex;
+    size_t vboOffset;
+    size_t aboOffset;
+    size_t iboOffset;
+    size_t meshOffset;
   };
 
-  struct Chunk {
-    GLuint    vboGL;
-    GLuint    aboGL;
-    GLuint    iboGL;
-    GLuint    meshGL = 0;
+  struct Chunk
+  {
+    GLuint vboGL;
+    GLuint aboGL;
+    GLuint iboGL;
+    GLuint meshGL = 0;
 
-    GLuint    vboTEX;
-    GLuint    aboTEX;
-    GLuint    meshVertex32TEX;
-    GLuint    meshVertex16TEX;
+    GLuint vboTEX;
+    GLuint aboTEX;
+    GLuint meshVertex32TEX;
+    GLuint meshVertex16TEX;
 
-    size_t    vboSize;
-    size_t    aboSize;
-    size_t    iboSize;
-    size_t    meshSize;
+    size_t vboSize;
+    size_t aboSize;
+    size_t iboSize;
+    size_t meshSize;
 
-    uint64_t  vboADDR;
-    uint64_t  aboADDR;
-    uint64_t  iboADDR;
-    uint64_t  meshADDR;
+    uint64_t vboADDR;
+    uint64_t aboADDR;
+    uint64_t iboADDR;
+    uint64_t meshADDR;
 
-    uint64_t  vboTEXADDR;
-    uint64_t  aboTEXADDR;
-    uint64_t  meshVertex32TEXADDR;
-    uint64_t  meshVertex16TEXADDR;
+    uint64_t vboTEXADDR;
+    uint64_t aboTEXADDR;
+    uint64_t meshVertex32TEXADDR;
+    uint64_t meshVertex16TEXADDR;
   };
 
-  void  init(size_t vboStride, size_t aboStride, size_t maxChunk, bool bindless, bool fp16);
-  void  deinit();
-  void  alloc(size_t vboSize, size_t aboSize, size_t iboSize, size_t meshSize, Allocation& allocation);
-  void  finalize();
+  void init(size_t vboStride, size_t aboStride, size_t maxChunk, bool bindless, bool fp16);
+  void deinit();
+  void alloc(size_t vboSize, size_t aboSize, size_t iboSize, size_t meshSize, Allocation& allocation);
+  void finalize();
 
   size_t getVertexSize() const
   {
     size_t size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].vboSize;
     }
     return size;
@@ -88,7 +92,8 @@ public:
   size_t getAttributeSize() const
   {
     size_t size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].aboSize;
     }
     return size;
@@ -97,7 +102,8 @@ public:
   size_t getIndexSize() const
   {
     size_t size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].iboSize;
     }
     return size;
@@ -106,84 +112,77 @@ public:
   size_t getMeshSize() const
   {
     size_t size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].meshSize;
     }
     return size;
   }
 
-  const Chunk& getChunk(const Allocation& allocation) const
-  {
-    return m_chunks[allocation.chunkIndex];
-  }
+  const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
 
-  const Chunk& getChunk(Index index) const
-  {
-    return m_chunks[index];
-  }
+  const Chunk& getChunk(Index index) const { return m_chunks[index]; }
 
-  size_t getChunkCount() const
-  {
-    return m_chunks.size();
-  }
+  size_t getChunkCount() const { return m_chunks.size(); }
 
 private:
-  size_t  m_alignment;
-  size_t  m_vboAlignment;
-  size_t  m_aboAlignment;
-  size_t  m_maxChunk;
-  size_t  m_maxVboChunk;
-  size_t  m_maxIboChunk;
-  size_t  m_maxMeshChunk;
-  bool    m_bindless;
-  bool    m_fp16;
+  size_t m_alignment;
+  size_t m_vboAlignment;
+  size_t m_aboAlignment;
+  size_t m_maxChunk;
+  size_t m_maxVboChunk;
+  size_t m_maxIboChunk;
+  size_t m_maxMeshChunk;
+  bool   m_bindless;
+  bool   m_fp16;
 
-  std::vector<Chunk>    m_chunks;
+  std::vector<Chunk> m_chunks;
 
-  Index getActiveIndex() {
-    return (m_chunks.size() - 1);
-  }
+  Index getActiveIndex() { return (m_chunks.size() - 1); }
 
-  Chunk& getActiveChunk() {
+  Chunk& getActiveChunk()
+  {
     assert(!m_chunks.empty());
     return m_chunks[getActiveIndex()];
   }
-
 };
 
 class CadSceneGL
 {
 public:
-  struct Geometry {
+  struct Geometry
+  {
     GeometryMemoryGL::Allocation mem;
 
-    nvgl::GLBufferBinding   vbo;
-    nvgl::GLBufferBinding   abo;
-    nvgl::GLBufferBinding   ibo;
+    nvgl::BufferBinding vbo;
+    nvgl::BufferBinding abo;
+    nvgl::BufferBinding ibo;
 
-    nvgl::GLBufferBinding   topoMeshlet;
-    nvgl::GLBufferBinding   topoPrim;
-    nvgl::GLBufferBinding   topoVert;
+    nvgl::BufferBinding topoMeshlet;
+    nvgl::BufferBinding topoPrim;
+    nvgl::BufferBinding topoVert;
 
-  #if USE_PER_GEOMETRY_VIEWS
-    nvgl::GLTextureBuffer   vboTEX;
-    nvgl::GLTextureBuffer   aboTEX;
-    nvgl::GLTextureBuffer   vertTEX;
-  #endif
+#if USE_PER_GEOMETRY_VIEWS
+    nvgl::TextureBuffer vboTEX;
+    nvgl::TextureBuffer aboTEX;
+    nvgl::TextureBuffer vertTEX;
+#endif
   };
 
-  struct GeometryUbo {
-    uint8_t     uboData[256];
+  struct GeometryUbo
+  {
+    uint8_t uboData[256];
   };
 
-  struct Buffers {
-    nvgl::GLBuffer  matrices;
-    nvgl::GLBuffer  materials;
+  struct Buffers
+  {
+    nvgl::Buffer matrices;
+    nvgl::Buffer materials;
   };
 
-  Buffers                         m_buffers;
-  std::vector<Geometry>           m_geometry;
-  GeometryMemoryGL                m_geometryMem;
+  Buffers               m_buffers;
+  std::vector<Geometry> m_geometry;
+  GeometryMemoryGL      m_geometryMem;
 
 
   void init(const CadScene& cadscene);

@@ -30,66 +30,91 @@
 
 #include "cadscene.hpp"
 
-#include <nvvk/deviceutils_vk.hpp>
+#include <nvvk/buffers_vk.hpp>
+#include <nvvk/commands_vk.hpp>
 #include <nvvk/memorymanagement_vk.hpp>
-#include <nvvk/staging_vk.hpp>
-#include <nvvk/submission_vk.hpp>
-#include <nvvk/makers_vk.hpp>
-#include <nvvk/physical_vk.hpp>
 
-struct TempSubmissionInterface
+// ScopeStaging handles uploads and other staging operations.
+// not efficient because it blocks/syncs operations
+
+struct ScopeStaging
 {
-  virtual VkCommandBuffer tempSubmissionCreateCommandBuffer(bool primary, VkQueueFlags preferredQueue = 0) = 0;
-  virtual void            tempSubmissionEnqueue(VkCommandBuffer cmd, VkQueueFlags preferredQueue = 0)      = 0;
-  virtual void            tempSubmissionSubmit(bool sync, VkFence fence = 0, VkQueueFlags preferredQueue = 0, uint32_t deviceMask = 0) = 0;
+
+  ScopeStaging(VkDevice device, VkPhysicalDevice physical, VkQueue queue, uint32_t queueFamily, VkDeviceSize size = 128 * 1024 * 1024)
+      : staging(device, physical, size)
+      , cmdPool(device, queue, queueFamily)
+      , cmd(VK_NULL_HANDLE)
+  {
+  }
+
+  VkCommandBuffer          cmd;
+  nvvk::ScopeStagingBuffer staging;
+  nvvk::ScopeSubmitCmdPool cmdPool;
+
+  VkCommandBuffer getCmd()
+  {
+    cmd = cmd ? cmd : cmdPool.begin();
+    return cmd;
+  }
+
+  void submit()
+  {
+    if(cmd)
+    {
+      cmdPool.end(cmd);
+      cmd = VK_NULL_HANDLE;
+    }
+  }
+
+  void upload(const VkDescriptorBufferInfo& binding, const void* data)
+  {
+    if(cmd && (data == nullptr || staging.doesNotFit(binding.range)))
+    {
+      submit();
+      staging.flush();
+    }
+    if(data && binding.range)
+    {
+      staging.cmdToBuffer(getCmd(), binding.buffer, binding.offset, binding.range, data);
+    }
+  }
 };
 
-inline void FixedSizeStagingBuffer_flush(nvvk::FixedSizeStagingBuffer& staging, TempSubmissionInterface* tempIF, bool sync)
-{
-  if(!staging.canFlush())
-    return;
 
-  VkCommandBuffer          cmd   = tempIF->tempSubmissionCreateCommandBuffer(true);
-  VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-  begin.flags                    = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-  vkBeginCommandBuffer(cmd, &begin);
-  staging.flush(cmd);
-  vkEndCommandBuffer(cmd);
-
-  tempIF->tempSubmissionEnqueue(cmd);
-  tempIF->tempSubmissionSubmit(sync);
-}
+// GeometryMemoryVK manages vbo/ibo etc. in chunks
+// allows to reduce number of bindings and be more memory efficient
 
 struct GeometryMemoryVK
 {
   typedef size_t Index;
 
 
-  struct Allocation {
-    Index           chunkIndex;
-    VkDeviceSize    vboOffset;
-    VkDeviceSize    aboOffset;
-    VkDeviceSize    iboOffset;
-    VkDeviceSize    meshOffset;
+  struct Allocation
+  {
+    Index        chunkIndex;
+    VkDeviceSize vboOffset;
+    VkDeviceSize aboOffset;
+    VkDeviceSize iboOffset;
+    VkDeviceSize meshOffset;
   };
 
-  struct Chunk {
-    VkBuffer        vbo;
-    VkBuffer        ibo;
-    VkBuffer        abo;
-    VkBuffer        mesh;
+  struct Chunk
+  {
+    VkBuffer vbo;
+    VkBuffer ibo;
+    VkBuffer abo;
+    VkBuffer mesh;
 
-    VkDescriptorBufferInfo  meshInfo;
-    VkBufferView    vboView;
-    VkBufferView    aboView;
-    VkBufferView    vert16View;
-    VkBufferView    vert32View;
+    VkDescriptorBufferInfo meshInfo;
+    VkBufferView           vboView;
+    VkBufferView           aboView;
+    VkBufferView           vert16View;
+    VkBufferView           vert32View;
 
-    VkDeviceSize    vboSize;
-    VkDeviceSize    aboSize;
-    VkDeviceSize    iboSize;
-    VkDeviceSize    meshSize;
+    VkDeviceSize vboSize;
+    VkDeviceSize aboSize;
+    VkDeviceSize iboSize;
+    VkDeviceSize meshSize;
 
     nvvk::AllocationID vboAID;
     nvvk::AllocationID aboAID;
@@ -98,31 +123,30 @@ struct GeometryMemoryVK
   };
 
 
-  VkDevice                              m_device = VK_NULL_HANDLE;
-  const VkAllocationCallbacks*          m_allocationCBs = nullptr;
-  nvvk::BlockDeviceMemoryAllocator*  m_memoryAllocator;
-  std::vector<Chunk>                    m_chunks;
-  bool                                  m_fp16 = false;
+  VkDevice                     m_device = VK_NULL_HANDLE;
+  nvvk::DeviceMemoryAllocator* m_memoryAllocator;
+  std::vector<Chunk>           m_chunks;
+  bool                         m_fp16 = false;
 
-  void init(VkDevice device, nvvk::BlockDeviceMemoryAllocator* deviceAllocator, const VkPhysicalDeviceLimits& limits, VkDeviceSize vboStride, VkDeviceSize aboStride, VkDeviceSize maxChunk, const VkAllocationCallbacks* allocator = nullptr);
+  void init(VkDevice                     device,
+            VkPhysicalDevice             physicalDevice,
+            nvvk::DeviceMemoryAllocator* memoryAllocator,
+            VkDeviceSize                 vboStride,
+            VkDeviceSize                 aboStride,
+            VkDeviceSize                 maxChunk);
   void deinit();
   void alloc(VkDeviceSize vboSize, VkDeviceSize aboSize, VkDeviceSize iboSize, VkDeviceSize meshSize, Allocation& allocation);
   void finalize();
 
-  const Chunk& getChunk(const Allocation& allocation) const
-  {
-    return m_chunks[allocation.chunkIndex];
-  }
+  const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
 
-  const Chunk& getChunk(Index index) const
-  {
-    return m_chunks[index];
-  }
+  const Chunk& getChunk(Index index) const { return m_chunks[index]; }
 
   VkDeviceSize getVertexSize() const
   {
     VkDeviceSize size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].vboSize;
     }
     return size;
@@ -131,7 +155,8 @@ struct GeometryMemoryVK
   VkDeviceSize getAttributeSize() const
   {
     VkDeviceSize size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].aboSize;
     }
     return size;
@@ -140,7 +165,8 @@ struct GeometryMemoryVK
   VkDeviceSize getIndexSize() const
   {
     VkDeviceSize size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].iboSize;
     }
     return size;
@@ -149,94 +175,83 @@ struct GeometryMemoryVK
   VkDeviceSize getMeshSize() const
   {
     VkDeviceSize size = 0;
-    for (size_t i = 0; i < m_chunks.size(); i++) {
+    for(size_t i = 0; i < m_chunks.size(); i++)
+    {
       size += m_chunks[i].meshSize;
     }
     return size;
   }
 
-  VkDeviceSize getChunkCount() const
-  {
-    return m_chunks.size();
-  }
+  VkDeviceSize getChunkCount() const { return m_chunks.size(); }
 
 private:
-  VkDeviceSize  m_alignment;
-  VkDeviceSize  m_vboAlignment;
-  VkDeviceSize  m_aboAlignment;
-  VkDeviceSize  m_maxVboChunk;
-  VkDeviceSize  m_maxIboChunk;
-  VkDeviceSize  m_maxMeshChunk;
+  VkDeviceSize m_alignment;
+  VkDeviceSize m_vboAlignment;
+  VkDeviceSize m_aboAlignment;
+  VkDeviceSize m_maxVboChunk;
+  VkDeviceSize m_maxIboChunk;
+  VkDeviceSize m_maxMeshChunk;
 
-  Index getActiveIndex() {
-    return (m_chunks.size() - 1);
-  }
+  Index getActiveIndex() { return (m_chunks.size() - 1); }
 
-  Chunk& getActiveChunk() {
+  Chunk& getActiveChunk()
+  {
     assert(!m_chunks.empty());
     return m_chunks[getActiveIndex()];
   }
 };
 
 
-class CadSceneVK 
+class CadSceneVK
 {
 public:
-  struct Geometry {
-    GeometryMemoryVK::Allocation  allocation;
+  struct Geometry
+  {
+    GeometryMemoryVK::Allocation allocation;
 
-    VkDescriptorBufferInfo  vbo;
-    VkDescriptorBufferInfo  abo;
-    VkDescriptorBufferInfo  ibo;
+    VkDescriptorBufferInfo vbo;
+    VkDescriptorBufferInfo abo;
+    VkDescriptorBufferInfo ibo;
 
-    VkDescriptorBufferInfo  meshletDesc;
-    VkDescriptorBufferInfo  meshletPrim;
-    VkDescriptorBufferInfo  meshletVert;
+    VkDescriptorBufferInfo meshletDesc;
+    VkDescriptorBufferInfo meshletPrim;
+    VkDescriptorBufferInfo meshletVert;
 
-  #if USE_PER_GEOMETRY_VIEWS
-    VkBufferView            vboView;
-    VkBufferView            aboView;
-    VkBufferView            vertView;
-  #endif
+#if USE_PER_GEOMETRY_VIEWS
+    VkBufferView vboView;
+    VkBufferView aboView;
+    VkBufferView vertView;
+#endif
   };
 
-  struct Buffers {
-    VkBuffer    materials = VK_NULL_HANDLE;
-    VkBuffer    matrices = VK_NULL_HANDLE;
+  struct Buffers
+  {
+    VkBuffer materials = VK_NULL_HANDLE;
+    VkBuffer matrices  = VK_NULL_HANDLE;
 
-    nvvk::AllocationID   materialsAID;
-    nvvk::AllocationID   matricesAID;
+    nvvk::AllocationID materialsAID;
+    nvvk::AllocationID matricesAID;
   };
 
-  struct Infos {
-    VkDescriptorBufferInfo
-      materialsSingle,
-      materials,
-      matricesSingle,
-      matrices;
+  struct Infos
+  {
+    VkDescriptorBufferInfo materialsSingle;
+    VkDescriptorBufferInfo materials;
+    VkDescriptorBufferInfo matricesSingle;
+    VkDescriptorBufferInfo matrices;
   };
 
-  struct Config {
-    TempSubmissionInterface* tempInterface;
-  };
 
-  VkDevice                                  m_device = VK_NULL_HANDLE;
-  const VkAllocationCallbacks*              m_allocator = nullptr;
-  nvvk::BlockDeviceMemoryAllocator m_memAllocator;
+  VkDevice                    m_device = VK_NULL_HANDLE;
+  nvvk::DeviceMemoryAllocator m_memAllocator;
 
-  Config                        m_config;
+  Buffers m_buffers;
+  Infos   m_infos;
 
-  Buffers                       m_buffers;
-  Infos                         m_infos;
-
-  std::vector<Geometry>         m_geometry;
-  GeometryMemoryVK              m_geometryMem;
+  std::vector<Geometry> m_geometry;
+  GeometryMemoryVK      m_geometryMem;
 
 
-  void init(const CadScene& cadscene, VkDevice device, const nvvk::PhysicalInfo* physical, const Config& config, const VkAllocationCallbacks*  allocator = nullptr);
+  void init(const CadScene& cadscene, VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, uint32_t queueFamilyIndex);
   void deinit();
-
-private:
-
-  void upload(nvvk::FixedSizeStagingBuffer& staging, const VkDescriptorBufferInfo& binding, const void* data);
 };

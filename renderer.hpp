@@ -34,77 +34,80 @@
 
 namespace meshlettest {
 
-  class RenderList {
-  public:
-    enum Strategy {         // per-object 
-      STRATEGY_SINGLE,      // entire geometry
-      STRATEGY_INDIVIDUAL,
-    };
-
-    struct Config {
-      Strategy  strategy;
-      uint32_t  objectFrom;
-      uint32_t  objectNum;
-      int32_t   indexThreshold;
-      uint32_t  minTaskMeshlets;
-    };
-
-    struct DrawItem {
-      bool                    task;
-      bool                    shorts;
-      int                     geometryIndex;
-      int                     matrixIndex;
-      int                     cullIndex;
-      CadScene::DrawRange     range;
-      CadScene::MeshletRange  meshlet;
-    };
-
-    void setup(const CadScene* NV_RESTRICT scene, const Config& config);
-
-    CullStats                     m_stats;
-    Config                        m_config;
-    const CadScene* NV_RESTRICT   m_scene;
-    std::vector<DrawItem>         m_drawItems;
+class RenderList
+{
+public:
+  enum Strategy
+  {                   // per-object
+    STRATEGY_SINGLE,  // entire geometry
+    STRATEGY_INDIVIDUAL,
   };
 
-  class Renderer {
-  public:
-
-    struct Config {
-      bool blah = false;
-    };
-
-    class Type {
-    public:
-      Type() {
-        getRegistry().push_back(this);
-      }
-
-    public:
-      virtual bool isAvailable() const = 0;
-      virtual const char* name() const = 0;
-      virtual Renderer* create() const = 0;
-      virtual unsigned int priority() const { return 0xFF; } 
-
-      virtual Resources* resources() = 0;
-    };
-
-    typedef std::vector<Type*> Registry;
-
-   static Registry& getRegistry()
-   {
-     static Registry s_registry;
-     return s_registry;
-   }
-
-  public:
-    virtual bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) = 0;
-    virtual void deinit() = 0;
-    virtual void draw(const FrameConfig& global) = 0;
-
-    virtual ~Renderer() {}
-    
+  struct Config
+  {
+    Strategy strategy;
+    uint32_t objectFrom;
+    uint32_t objectNum;
+    int32_t  indexThreshold;
+    uint32_t minTaskMeshlets;
   };
-}
+
+  struct DrawItem
+  {
+    bool                   task;
+    bool                   shorts;
+    int                    geometryIndex;
+    int                    matrixIndex;
+    int                    cullIndex;
+    CadScene::DrawRange    range;
+    CadScene::MeshletRange meshlet;
+  };
+
+  void setup(const CadScene* NV_RESTRICT scene, const Config& config);
+
+  CullStats       m_stats;
+  Config          m_config;
+  const CadScene* NV_RESTRICT m_scene;
+  std::vector<DrawItem>       m_drawItems;
+};
+
+class Renderer
+{
+public:
+  struct Config
+  {
+    bool blah = false;
+  };
+
+  class Type
+  {
+  public:
+    Type() { getRegistry().push_back(this); }
+
+  public:
+    virtual bool         isAvailable() const = 0;
+    virtual const char*  name() const        = 0;
+    virtual Renderer*    create() const      = 0;
+    virtual unsigned int priority() const { return 0xFF; }
+
+    virtual Resources* resources() = 0;
+  };
+
+  typedef std::vector<Type*> Registry;
+
+  static Registry& getRegistry()
+  {
+    static Registry s_registry;
+    return s_registry;
+  }
+
+public:
+  virtual bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) = 0;
+  virtual void deinit()                                                                       = 0;
+  virtual void draw(const FrameConfig& global)                                                = 0;
+
+  virtual ~Renderer() {}
+};
+}  // namespace meshlettest
 
 #endif
