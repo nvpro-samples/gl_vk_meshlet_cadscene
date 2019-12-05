@@ -1032,6 +1032,17 @@ void Sample::setupConfigParameters()
 
 bool Sample::validateConfig()
 {
+  if (m_modelFilename.empty())
+  {
+    std::vector<std::string> searchPaths;
+    searchPaths.push_back("./");
+    searchPaths.push_back(exePath() + PROJECT_RELDIRECTORY + "/");
+    std::string configFile = nvh::findFile("worldcar_meshlet.cfg", searchPaths);
+    if (!configFile.empty()) {
+      parseConfigFile(configFile.c_str());
+    }
+  }
+
   if(m_modelFilename.empty())
   {
     LOGI("no modelfile specified\n");
