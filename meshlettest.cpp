@@ -724,8 +724,8 @@ void Sample::processUI(int width, int height, double time)
 
       float gpuTimeF = float(m_statsGpuTime);
       ImGui::Text("         Render GPU [ms]: %2.3f", gpuTimeF / 1000.0f);
-      ImGui::Text("Original Index Size [MB]: %4d", m_scene.m_iboSize / (1024 * 1024));
-      ImGui::Text("       Meshlet Size [MB]: %4d", m_scene.m_meshSize / (1024 * 1024));
+      ImGui::Text("Original Index Size [MB]: %4zu", m_scene.m_iboSize / (1024 * 1024));
+      ImGui::Text("       Meshlet Size [MB]: %4zu", m_scene.m_meshSize / (1024 * 1024));
     }
     ImGui::Checkbox("generate stats", &m_tweak.useStats);
     if(m_tweak.useStats)

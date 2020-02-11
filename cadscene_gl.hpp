@@ -29,7 +29,7 @@
 
 #include "cadscene.hpp"
 #include <include_gl.h>
-#include <nvgl\base_gl.hpp>
+#include <nvgl/base_gl.hpp>
 
 
 class GeometryMemoryGL

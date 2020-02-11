@@ -27,6 +27,7 @@
 
 
 #include <assert.h>
+#include <string.h>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 

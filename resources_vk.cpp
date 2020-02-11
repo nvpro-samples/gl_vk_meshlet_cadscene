@@ -297,9 +297,9 @@ bool ResourcesVK::init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::
   m_queue       = m_context->m_queueGCT.queue;
   m_queueFamily = m_context->m_queueGCT.familyIndex;
 
-  LOGI("Vk device: %s\n", m_context->m_physicalInfo.properties.deviceName);
+  LOGI("Vk device: %s\n", m_context->m_physicalInfo.properties10.deviceName);
 
-  initAlignedSizes((uint32_t)m_context->m_physicalInfo.properties.limits.minUniformBufferOffsetAlignment);
+  initAlignedSizes((uint32_t)m_context->m_physicalInfo.properties10.limits.minUniformBufferOffsetAlignment);
 
   m_nativeMeshSupport = m_context->hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME);
 
@@ -730,8 +730,11 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   cbImageInfo.flags             = 0;
   cbImageInfo.initialLayout     = VK_IMAGE_LAYOUT_UNDEFINED;
 
-  m_framebuffer.imgColor =
-      m_framebuffer.memAllocator.createImage(cbImageInfo, nvvk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  {
+    nvvk::AllocationID allocationId;
+    m_framebuffer.imgColor =
+      m_framebuffer.memAllocator.createImage(cbImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  }
 
   // depth stencil
   VkFormat depthStencilFormat = nvvk::findDepthStencilFormat(m_physical);
@@ -750,8 +753,11 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   dsImageInfo.flags             = 0;
   dsImageInfo.initialLayout     = VK_IMAGE_LAYOUT_UNDEFINED;
 
-  m_framebuffer.imgDepthStencil =
-      m_framebuffer.memAllocator.createImage(dsImageInfo, nvvk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  {
+    nvvk::AllocationID allocationId;
+    m_framebuffer.imgDepthStencil =
+      m_framebuffer.memAllocator.createImage(dsImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  }
 
   if(m_framebuffer.useResolved)
   {
@@ -770,8 +776,12 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
     resImageInfo.flags         = 0;
     resImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    m_framebuffer.imgColorResolved =
-        m_framebuffer.memAllocator.createImage(resImageInfo, nvvk::AllocationID(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    {
+      nvvk::AllocationID allocationId;
+      m_framebuffer.imgColorResolved =
+        m_framebuffer.memAllocator.createImage(resImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    }
   }
 
   // views after allocation handling

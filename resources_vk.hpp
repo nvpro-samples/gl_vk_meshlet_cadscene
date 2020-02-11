@@ -178,7 +178,7 @@ public:
 
     return &res;
   }
-  static bool ResourcesVK::isAvailable();
+  static bool isAvailable();
 
 #if HAS_OPENGL
   bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler);

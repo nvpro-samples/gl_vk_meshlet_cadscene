@@ -33,8 +33,11 @@
 #include <NvFoundation.h>
 #include <algorithm>
 #include <cstdint>
+#if (defined(NV_X86) || defined(NV_X64)) && defined(_MSC_VER)
 #include <intrin.h>
+#endif
 #include <vector>
+#include <stdio.h>
 
 
 namespace NVMeshlet {
