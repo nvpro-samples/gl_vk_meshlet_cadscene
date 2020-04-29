@@ -153,13 +153,17 @@ void GeometryMemoryVK::finalize()
   chunk.ibo = m_memoryAllocator->createBuffer(chunk.iboSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | flags, chunk.iboAID);
   chunk.mesh = m_memoryAllocator->createBuffer(chunk.meshSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flags, chunk.meshAID);
 
-  chunk.meshInfo   = {chunk.mesh, 0, chunk.meshSize};
-  chunk.vboView    = nvvk::createBufferView(m_device, chunk.vbo,
-                                         m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT, chunk.vboSize);
-  chunk.aboView    = nvvk::createBufferView(m_device, chunk.abo,
-                                         m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT, chunk.aboSize);
-  chunk.vert16View = nvvk::createBufferView(m_device, chunk.mesh, VK_FORMAT_R16_UINT, chunk.meshSize);
-  chunk.vert32View = nvvk::createBufferView(m_device, chunk.mesh, VK_FORMAT_R32_UINT, chunk.meshSize);
+  chunk.meshInfo = {chunk.mesh, 0, chunk.meshSize};
+  chunk.vboView =
+      nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.vbo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT,
+                                                                      chunk.vboSize));
+  chunk.aboView =
+      nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.abo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT,
+                                                                      chunk.aboSize));
+  chunk.vert16View =
+      nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.mesh, VK_FORMAT_R16_UINT, chunk.meshSize));
+  chunk.vert32View =
+      nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.mesh, VK_FORMAT_R32_UINT, chunk.meshSize));
 }
 
 void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, uint32_t queueFamilyIndex)
@@ -248,9 +252,14 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
 
 #if USE_PER_GEOMETRY_VIEWS
       // views
-      geom.vboView = nvvk::createBufferView(device, geom.vbo, cadscene.m_cfg.fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT);
-      geom.aboView = nvvk::createBufferView(device, geom.abo, cadscene.m_cfg.fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT);
-      geom.vertView = nvvk::createBufferView(device, geom.meshletVert, cadgeom.useShorts ? VK_FORMAT_R16_UINT : VK_FORMAT_R32_UINT);
+      geom.vboView = nvvk::createBufferView(
+          device, nvvk::makeBufferViewCreateInfo(geom.vbo, cadscene.m_cfg.fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT :
+                                                                                 VK_FORMAT_R32G32B32A32_SFLOAT));
+      geom.aboView = nvvk::createBufferView(
+          device, nvvk::makeBufferViewCreateInfo(geom.abo, cadscene.m_cfg.fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT :
+                                                                                 VK_FORMAT_R32G32B32A32_SFLOAT));
+      geom.vertView = nvvk::createBufferView(
+          device, nvvk::makeBufferViewCreateInfo(geom.meshletVert, cadgeom.useShorts ? VK_FORMAT_R16_UINT : VK_FORMAT_R32_UINT));
 #endif
     }
   }

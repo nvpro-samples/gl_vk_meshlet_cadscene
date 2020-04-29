@@ -40,20 +40,23 @@
 struct ScopeStaging
 {
 
-  ScopeStaging(VkDevice device, VkPhysicalDevice physical, VkQueue queue, uint32_t queueFamily, VkDeviceSize size = 128 * 1024 * 1024)
+  ScopeStaging(VkDevice device, VkPhysicalDevice physical, VkQueue queue_, uint32_t queueFamily, VkDeviceSize size = 128 * 1024 * 1024)
       : staging(device, physical, size)
-      , cmdPool(device, queue, queueFamily)
+      , cmdPool(device, queueFamily)
+      , queue(queue_)
       , cmd(VK_NULL_HANDLE)
   {
+    staging.setFreeUnusedOnRelease(false);
   }
 
-  VkCommandBuffer          cmd;
-  nvvk::ScopeStagingBuffer staging;
-  nvvk::ScopeSubmitCmdPool cmdPool;
+  VkCommandBuffer            cmd;
+  nvvk::StagingMemoryManager staging;
+  nvvk::CommandPool          cmdPool;
+  VkQueue                    queue;
 
   VkCommandBuffer getCmd()
   {
-    cmd = cmd ? cmd : cmdPool.begin();
+    cmd = cmd ? cmd : cmdPool.createCommandBuffer();
     return cmd;
   }
 
@@ -61,17 +64,17 @@ struct ScopeStaging
   {
     if(cmd)
     {
-      cmdPool.end(cmd);
+      cmdPool.submitAndWait(cmd, queue);
       cmd = VK_NULL_HANDLE;
     }
   }
 
   void upload(const VkDescriptorBufferInfo& binding, const void* data)
   {
-    if(cmd && (data == nullptr || staging.doesNotFit(binding.range)))
+    if(cmd && (data == nullptr || !staging.fitsInAllocated(binding.range)))
     {
       submit();
-      staging.flush();
+      staging.releaseResources();
     }
     if(data && binding.range)
     {

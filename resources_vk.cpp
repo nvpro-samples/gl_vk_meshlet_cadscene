@@ -99,13 +99,13 @@ void ResourcesVK::beginFrame()
   assert(!m_withinFrame);
   m_withinFrame           = true;
   m_submissionWaitForRead = true;
-  m_ringFences.wait();
-  m_ringCmdPool.setCycle(m_ringFences.getCycleIndex());
+  m_ringFences.setCycleAndWait(m_frame);
+  m_ringCmdPool.setCycle(m_frame);
 }
 
 void ResourcesVK::endFrame()
 {
-  submissionExecute(m_ringFences.advanceCycle(), true, true);
+  submissionExecute(m_ringFences.getFence(), true, true);
   assert(m_withinFrame);
   m_withinFrame = false;
 #if HAS_OPENGL
@@ -336,9 +336,9 @@ bool ResourcesVK::init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::
     m_common.statsInfo = {m_common.statsBuffer, 0, sizeof(CullStats)};
 
     m_common.statsReadBuffer =
-        m_memAllocator.createBuffer(sizeof(CullStats) * nvvk::MAX_RING_FRAMES, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        m_memAllocator.createBuffer(sizeof(CullStats) * nvvk::DEFAULT_RING_SIZE, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                     m_common.statsReadAID, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
-    m_common.statsReadInfo = {m_common.statsReadBuffer, 0, sizeof(CullStats) * nvvk::MAX_RING_FRAMES};
+    m_common.statsReadInfo = {m_common.statsReadBuffer, 0, sizeof(CullStats) * nvvk::DEFAULT_RING_SIZE};
   }
 
   {
@@ -566,7 +566,7 @@ void ResourcesVK::updatedPrograms()
 
 void ResourcesVK::deinitPrograms()
 {
-  m_shaderManager.deleteShaderModules();
+  m_shaderManager.deinit();
 }
 
 static VkSampleCountFlagBits getSampleCountFlagBits(int msaa)
@@ -732,8 +732,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
 
   {
     nvvk::AllocationID allocationId;
-    m_framebuffer.imgColor =
-      m_framebuffer.memAllocator.createImage(cbImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    m_framebuffer.imgColor = m_framebuffer.memAllocator.createImage(cbImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   }
 
   // depth stencil
@@ -756,7 +755,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   {
     nvvk::AllocationID allocationId;
     m_framebuffer.imgDepthStencil =
-      m_framebuffer.memAllocator.createImage(dsImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        m_framebuffer.memAllocator.createImage(dsImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   }
 
   if(m_framebuffer.useResolved)
@@ -779,8 +778,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
     {
       nvvk::AllocationID allocationId;
       m_framebuffer.imgColorResolved =
-        m_framebuffer.memAllocator.createImage(resImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
+          m_framebuffer.memAllocator.createImage(resImageInfo, allocationId, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     }
   }
 
@@ -833,8 +831,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
     VkCommandBuffer cmd = createTempCmdBuffer();
 
 #if !HAS_OPENGL
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, NULL, 0, NULL,
-                         m_swapChain->getImageCount(), m_swapChain->getImageMemoryBarriers());
+    m_swapChain->cmdUpdateBarriers(cmd);
 #endif
 
     cmdImageTransition(cmd, m_framebuffer.imgColor, VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_ACCESS_TRANSFER_READ_BIT,
@@ -1346,7 +1343,7 @@ VkCommandBuffer ResourcesVK::createCmdBuffer(VkCommandPool pool, bool singleshot
 VkCommandBuffer ResourcesVK::createTempCmdBuffer(bool primary /*=true*/, bool secondaryInClear /*=false*/)
 {
   VkCommandBuffer cmd =
-      m_ringCmdPool.createCommandBuffer(primary ? VK_COMMAND_BUFFER_LEVEL_PRIMARY : VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+      m_ringCmdPool.createCommandBuffer(primary ? VK_COMMAND_BUFFER_LEVEL_PRIMARY : VK_COMMAND_BUFFER_LEVEL_SECONDARY, false);
   cmdBegin(cmd, true, primary, secondaryInClear);
   return cmd;
 }
@@ -1380,7 +1377,7 @@ void ResourcesVK::resetTempResources()
 {
   synchronize();
   m_ringFences.reset();
-  m_ringCmdPool.reset(VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+  m_ringCmdPool.reset();
 }
 
 bool ResourcesVK::initScene(const CadScene& cadscene)
@@ -1421,10 +1418,10 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
     {
       {
         VkWriteDescriptorSet updateDescriptors[] = {
-            m_setupRegular.container.at(DSET_SCENE).getWrite(0, SCENE_UBO_VIEW, &m_common.viewInfo),
-            m_setupRegular.container.at(DSET_OBJECT).getWrite(0, 0, &m_scene.m_infos.matricesSingle),
-            m_setupBbox.container.at(DSET_SCENE).getWrite(0, SCENE_UBO_VIEW, &m_common.viewInfo),
-            m_setupBbox.container.at(DSET_OBJECT).getWrite(0, 0, &m_scene.m_infos.matricesSingle),
+            m_setupRegular.container.at(DSET_SCENE).makeWrite(0, SCENE_UBO_VIEW, &m_common.viewInfo),
+            m_setupRegular.container.at(DSET_OBJECT).makeWrite(0, 0, &m_scene.m_infos.matricesSingle),
+            m_setupBbox.container.at(DSET_SCENE).makeWrite(0, SCENE_UBO_VIEW, &m_common.viewInfo),
+            m_setupBbox.container.at(DSET_OBJECT).makeWrite(0, 0, &m_scene.m_infos.matricesSingle),
 
         };
         vkUpdateDescriptorSets(m_device, NV_ARRAY_SIZE(updateDescriptors), updateDescriptors, 0, 0);
@@ -1433,9 +1430,9 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
       if(m_nativeMeshSupport)
       {
         VkWriteDescriptorSet updateDescriptors[] = {
-            m_setupMeshTask.container.at(DSET_SCENE).getWrite(0, SCENE_UBO_VIEW, &m_common.viewInfo),
-            m_setupMeshTask.container.at(DSET_SCENE).getWrite(0, SCENE_SSBO_STATS, &m_common.statsInfo),
-            m_setupMeshTask.container.at(DSET_OBJECT).getWrite(0, 0, &m_scene.m_infos.matricesSingle),
+            m_setupMeshTask.container.at(DSET_SCENE).makeWrite(0, SCENE_UBO_VIEW, &m_common.viewInfo),
+            m_setupMeshTask.container.at(DSET_SCENE).makeWrite(0, SCENE_SSBO_STATS, &m_common.statsInfo),
+            m_setupMeshTask.container.at(DSET_OBJECT).makeWrite(0, 0, &m_scene.m_infos.matricesSingle),
         };
         vkUpdateDescriptorSets(m_device, NV_ARRAY_SIZE(updateDescriptors), updateDescriptors, 0, 0);
       }
@@ -1451,20 +1448,20 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
         if(!geom.meshletDesc.range)
           continue;
 
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_SSBO_MESHLETDESC, &geom.meshletDesc));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_SSBO_PRIM, &geom.meshletPrim));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_TEX_VBO, &geom.vboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_TEX_ABO, &geom.aboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_TEX_IBO, &geom.vertView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_MESHLETDESC, &geom.meshletDesc));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_PRIM, &geom.meshletPrim));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_VBO, &geom.vboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_ABO, &geom.aboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_IBO, &geom.vertView));
 
 
         if(m_nativeMeshSupport)
         {
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_SSBO_MESHLETDESC, &geom.meshletDesc));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_SSBO_PRIM, &geom.meshletPrim));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_TEX_VBO, &geom.vboView));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_TEX_ABO, &geom.aboView));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g, GEOMETRY_TEX_IBO, &geom.vertView));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_MESHLETDESC, &geom.meshletDesc));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_PRIM, &geom.meshletPrim));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_VBO, &geom.vboView));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_ABO, &geom.aboView));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_IBO, &geom.vertView));
         }
       }
 
@@ -1480,46 +1477,46 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
 
 
         writeUpdates.push_back(
-            m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
+            m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
 
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
 
         writeUpdates.push_back(
-            m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
+            m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
 
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
 
 
         if(m_nativeMeshSupport)
         {
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
 
 
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).getWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
         }
       }
 
