@@ -94,7 +94,7 @@ public:
 
   void synchronize() override { glFinish(); }
 
-  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler);
+  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler) override;
   void deinit() override;
 
   bool initPrograms(const std::string& path, const std::string& prepend) override;

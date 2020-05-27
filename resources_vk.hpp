@@ -181,9 +181,9 @@ public:
   static bool isAvailable();
 
 #if HAS_OPENGL
-  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler);
+  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler) override;
 #else
-  bool                   init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::Profiler* profiler);
+  bool init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::Profiler* profiler) override;
 #endif
   void deinit() override;
 
@@ -203,7 +203,7 @@ public:
   bool initScene(const CadScene&) override;
   void deinitScene() override;
 
-  void synchronize();
+  void synchronize() override;
 
   void beginFrame() override;
   void blitFrame(const FrameConfig& global) override;

@@ -276,9 +276,9 @@ void RendererMeshGL::draw(const FrameConfig& global)
       statsDraw++;
     }
 
-    statsGeometry;
-    statsMatrix;
-    statsDraw;
+    (void)statsGeometry;
+    (void)statsMatrix;
+    (void)statsDraw;
   }
 
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO_SCENE_STATS, 0);

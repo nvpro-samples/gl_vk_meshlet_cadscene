@@ -656,7 +656,7 @@ void Sample::processUI(int width, int height, double time)
     ImGui::Separator();
     if(!m_messageString.empty())
     {
-      ImGui::Text(m_messageString.c_str());
+      ImGui::Text("%s", m_messageString.c_str());
       ImGui::Separator();
     }
 

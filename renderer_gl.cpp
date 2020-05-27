@@ -240,10 +240,10 @@ void RendererGL::draw(const FrameConfig& global)
       statsDraw++;
     }
 
-    statsGeometry;
-    statsMatrix;
-    statsDraw;
-    statsChunk;
+    (void)statsGeometry;
+    (void)statsMatrix;
+    (void)statsDraw;
+    (void)statsChunk;
   }
 
   glBindBufferBase(GL_UNIFORM_BUFFER, UBO_SCENE_VIEW, 0);
