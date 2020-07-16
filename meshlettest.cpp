@@ -389,7 +389,7 @@ bool Sample::initScene(const char* filename, int clones, int cloneaxis)
   m_scene.unload();
 
   bool status = m_scene.loadCSF(modelFilename.c_str(), m_modelConfig, clones, cloneaxis);
-  if(!status)
+  if(status)
   {
     LOGI("\nscene %s\n", filename);
     LOGI("meshlet max vertex:     %2d\n", m_scene.m_cfg.meshVertexCount);
