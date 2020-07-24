@@ -198,7 +198,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
     if(m_cfg.fp16)
     {
-      for(int i = 0; i < csfgeom->numVertices; i++)
+      for(uint32_t i = 0; i < csfgeom->numVertices; i++)
       {
         VertexFP16*           vertex    = (VertexFP16*)getVertex(geom.vboData, i);
         VertexAttributesFP16* attribute = (VertexAttributesFP16*)getVertexAttribute(geom.aboData, i);
@@ -227,7 +227,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     }
     else
     {
-      for(int i = 0; i < csfgeom->numVertices; i++)
+      for(uint32_t i = 0; i < csfgeom->numVertices; i++)
       {
         Vertex*           vertex    = (Vertex*)getVertex(geom.vboData, i);
         VertexAttributes* attribute = (VertexAttributes*)getVertexAttribute(geom.aboData, i);
@@ -263,7 +263,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
       geom.iboSize = sizeof(uint16_t) * csfgeom->numIndexSolid;
 
       uint16_t* indices = (uint16_t*)malloc(geom.iboSize);
-      for(int i = 0; i < csfgeom->numIndexSolid; i++)
+      for(uint32_t i = 0; i < csfgeom->numIndexSolid; i++)
       {
         indices[i] = csfgeom->indexSolid[i];
       }
@@ -285,12 +285,12 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
     uint32_t accumSolid  = 0;
     size_t   offsetSolid = 0;
-    for(int p = 0; p < csfgeom->numParts; p++)
+    for(uint32_t p = 0; p < csfgeom->numParts; p++)
     {
       geom.parts[p].indexSolid.count  = csfgeom->parts[p].numIndexSolid;
       geom.parts[p].indexSolid.offset = offsetSolid;
 
-      for(int i = 0; i < csfgeom->parts[p].numIndexSolid; i++)
+      for(uint32_t i = 0; i < csfgeom->parts[p].numIndexSolid; i++)
       {
         uint32_t v = csfgeom->indexSolid[i + accumSolid];
 
@@ -379,7 +379,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     object.faceCCW = nvmath::det(m_matrices[object.matrixIndex].worldMatrix) > 0;
 
     object.parts.resize(csfnode->numParts);
-    for(int i = 0; i < csfnode->numParts; i++)
+    for(uint32_t i = 0; i < csfnode->numParts; i++)
     {
       object.parts[i].active        = csfnode->parts[i].active ? 1 : 0;
       object.parts[i].matrixIndex   = n;
@@ -619,7 +619,7 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
 
     uint32_t numMeshlets = 0;
     uint32_t indexOffset = 0;
-    for(int p = 0; p < geo->numParts; p++)
+    for(uint32_t p = 0; p < geo->numParts; p++)
     {
       uint32_t numIndex = geo->parts[p].numIndexSolid;
 
