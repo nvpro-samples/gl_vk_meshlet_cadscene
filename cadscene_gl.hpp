@@ -44,6 +44,7 @@ public:
     size_t aboOffset;
     size_t iboOffset;
     size_t meshOffset;
+    size_t meshIndicesOffset;
   };
 
   struct Chunk
@@ -52,6 +53,7 @@ public:
     GLuint aboGL;
     GLuint iboGL;
     GLuint meshGL = 0;
+    GLuint meshIndicesGL = 0;
 
     GLuint vboTEX;
     GLuint aboTEX;
@@ -62,11 +64,13 @@ public:
     size_t aboSize;
     size_t iboSize;
     size_t meshSize;
+    size_t meshIndicesSize;
 
     uint64_t vboADDR;
     uint64_t aboADDR;
     uint64_t iboADDR;
     uint64_t meshADDR;
+    uint64_t meshIndicesADDR;
 
     uint64_t vboTEXADDR;
     uint64_t aboTEXADDR;
@@ -76,7 +80,7 @@ public:
 
   void init(size_t vboStride, size_t aboStride, size_t maxChunk, bool bindless, bool fp16);
   void deinit();
-  void alloc(size_t vboSize, size_t aboSize, size_t iboSize, size_t meshSize, Allocation& allocation);
+  void alloc(size_t vboSize, size_t aboSize, size_t iboSize, size_t meshSize, size_t meshIndicesSize, Allocation& allocation);
   void finalize();
 
   size_t getVertexSize() const
@@ -114,7 +118,7 @@ public:
     size_t size = 0;
     for(size_t i = 0; i < m_chunks.size(); i++)
     {
-      size += m_chunks[i].meshSize;
+      size += m_chunks[i].meshSize + m_chunks[i].meshIndicesSize;
     }
     return size;
   }
@@ -132,7 +136,7 @@ private:
   size_t m_maxChunk;
   size_t m_maxVboChunk;
   size_t m_maxIboChunk;
-  size_t m_maxMeshChunk;
+  size_t m_maxMeshIndicesChunk;
   bool   m_bindless;
   bool   m_fp16;
 

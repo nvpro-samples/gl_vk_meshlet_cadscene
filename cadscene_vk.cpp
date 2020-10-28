@@ -25,7 +25,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "nvmeshlet_builder.hpp"
+#include "nvmeshlet_array.hpp"
 
 #include "cadscene_vk.hpp"
 
@@ -75,11 +75,12 @@ void GeometryMemoryVK::init(VkDevice                     device,
 
   const VkDeviceSize vboMax  = VkDeviceSize(tboSize) * sizeof(float) * 4;
   const VkDeviceSize iboMax  = VkDeviceSize(tboSize) * sizeof(uint16_t);
-  const VkDeviceSize meshMax = VkDeviceSize(tboSize) * sizeof(uint16_t);
-
+  const VkDeviceSize meshIndicesMax = VkDeviceSize(tboSize) * sizeof(uint16_t);
+  
   m_maxVboChunk  = std::min(vboMax, maxChunk);
   m_maxIboChunk  = std::min(iboMax, maxChunk);
-  m_maxMeshChunk = std::min(meshMax, maxChunk);
+  m_maxMeshChunk = maxChunk;
+  m_maxMeshIndicesChunk = std::min(meshIndicesMax, maxChunk);
 }
 
 void GeometryMemoryVK::deinit()
@@ -97,26 +98,35 @@ void GeometryMemoryVK::deinit()
     vkDestroyBuffer(m_device, chunk.abo, nullptr);
     vkDestroyBuffer(m_device, chunk.ibo, nullptr);
     vkDestroyBuffer(m_device, chunk.mesh, nullptr);
+    vkDestroyBuffer(m_device, chunk.meshIndices, nullptr);
 
     m_memoryAllocator->free(chunk.vboAID);
     m_memoryAllocator->free(chunk.aboAID);
     m_memoryAllocator->free(chunk.iboAID);
     m_memoryAllocator->free(chunk.meshAID);
+    m_memoryAllocator->free(chunk.meshIndicesAID);
   }
   m_chunks          = std::vector<Chunk>();
   m_device          = nullptr;
   m_memoryAllocator = nullptr;
 }
 
-void GeometryMemoryVK::alloc(VkDeviceSize vboSize, VkDeviceSize aboSize, VkDeviceSize iboSize, VkDeviceSize meshSize, Allocation& allocation)
+void GeometryMemoryVK::alloc(VkDeviceSize vboSize,
+                           VkDeviceSize aboSize,
+                           VkDeviceSize iboSize,
+                           VkDeviceSize meshSize,
+                           VkDeviceSize meshIndicesSize,
+                           Allocation&  allocation)
 {
-  vboSize  = alignedSize(vboSize, m_vboAlignment);
-  aboSize  = alignedSize(aboSize, m_aboAlignment);
-  iboSize  = alignedSize(iboSize, m_alignment);
-  meshSize = alignedSize(meshSize, m_alignment);
+  vboSize         = alignedSize(vboSize, m_vboAlignment);
+  aboSize         = alignedSize(aboSize, m_aboAlignment);
+  iboSize         = alignedSize(iboSize, m_alignment);
+  meshSize        = alignedSize(meshSize, m_alignment);
+  meshIndicesSize = alignedSize(meshIndicesSize, m_alignment);
 
   if(m_chunks.empty() || getActiveChunk().vboSize + vboSize > m_maxVboChunk || getActiveChunk().aboSize + aboSize > m_maxVboChunk
-     || getActiveChunk().iboSize + iboSize > m_maxIboChunk || getActiveChunk().meshSize + meshSize > m_maxMeshChunk)
+     || getActiveChunk().iboSize + iboSize > m_maxIboChunk || getActiveChunk().meshSize + meshSize > m_maxMeshChunk
+     || getActiveChunk().meshIndicesSize + meshIndicesSize > m_maxMeshIndicesChunk)
   {
     finalize();
     Chunk chunk = {};
@@ -125,16 +135,18 @@ void GeometryMemoryVK::alloc(VkDeviceSize vboSize, VkDeviceSize aboSize, VkDevic
 
   Chunk& chunk = getActiveChunk();
 
-  allocation.chunkIndex = getActiveIndex();
-  allocation.vboOffset  = chunk.vboSize;
-  allocation.aboOffset  = chunk.aboSize;
-  allocation.iboOffset  = chunk.iboSize;
-  allocation.meshOffset = chunk.meshSize;
+  allocation.chunkIndex        = getActiveIndex();
+  allocation.vboOffset         = chunk.vboSize;
+  allocation.aboOffset         = chunk.aboSize;
+  allocation.iboOffset         = chunk.iboSize;
+  allocation.meshOffset        = chunk.meshSize;
+  allocation.meshIndicesOffset = chunk.meshIndicesSize;
 
   chunk.vboSize += vboSize;
   chunk.aboSize += aboSize;
   chunk.iboSize += iboSize;
   chunk.meshSize += meshSize;
+  chunk.meshIndicesSize += meshIndicesSize;
 }
 
 void GeometryMemoryVK::finalize()
@@ -146,24 +158,30 @@ void GeometryMemoryVK::finalize()
 
   Chunk& chunk = getActiveChunk();
 
+  // safety padding and ensure we always have all buffers (waste a bit of memory)
+  chunk.meshSize += sizeof(NVMeshlet::MeshletDesc) * NVMeshlet::MESHLETS_PER_TASK;
+  chunk.meshIndicesSize += 16;
+
   VkBufferUsageFlags flags = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
 
   chunk.vbo = m_memoryAllocator->createBuffer(chunk.vboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | flags, chunk.vboAID);
   chunk.abo = m_memoryAllocator->createBuffer(chunk.aboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | flags, chunk.aboAID);
   chunk.ibo = m_memoryAllocator->createBuffer(chunk.iboSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | flags, chunk.iboAID);
   chunk.mesh = m_memoryAllocator->createBuffer(chunk.meshSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flags, chunk.meshAID);
+  chunk.meshIndices = m_memoryAllocator->createBuffer(chunk.meshIndicesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flags, chunk.meshIndicesAID);
 
-  chunk.meshInfo = {chunk.mesh, 0, chunk.meshSize};
+  chunk.meshInfo        = {chunk.mesh, 0, chunk.meshSize};
+  chunk.meshIndicesInfo = {chunk.meshIndices, 0, chunk.meshIndicesSize};
+  chunk.vert16View = nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.meshIndices, VK_FORMAT_R16_UINT,
+                                                                                     chunk.meshIndicesSize));
+  chunk.vert32View = nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.meshIndices, VK_FORMAT_R32_UINT,
+                                                                                     chunk.meshIndicesSize));
   chunk.vboView =
       nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.vbo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT,
                                                                       chunk.vboSize));
   chunk.aboView =
       nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.abo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT,
                                                                       chunk.aboSize));
-  chunk.vert16View =
-      nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.mesh, VK_FORMAT_R16_UINT, chunk.meshSize));
-  chunk.vert32View =
-      nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.mesh, VK_FORMAT_R32_UINT, chunk.meshSize));
 }
 
 void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevice physicalDevice, VkQueue queue, uint32_t queueFamilyIndex)
@@ -188,7 +206,7 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
       const CadScene::Geometry& cadgeom = cadscene.m_geometry[g];
       Geometry&                 geom    = m_geometry[g];
 
-      m_geometryMem.alloc(cadgeom.vboSize, cadgeom.aboSize, cadgeom.iboSize, cadgeom.meshSize, geom.allocation);
+      m_geometryMem.alloc(cadgeom.vboSize, cadgeom.aboSize, cadgeom.iboSize, cadgeom.meshSize, cadgeom.meshIndicesSize, geom.allocation);
     }
 
     m_geometryMem.finalize();
@@ -197,7 +215,7 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
     LOGI("Size of attrib data: %11" PRId64 "\n", uint64_t(m_geometryMem.getAttributeSize()));
     LOGI("Size of index data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIndexSize()));
     LOGI("Size of mesh data:   %11" PRId64 "\n", uint64_t(m_geometryMem.getMeshSize()));
-    LOGI("Size of data:        %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize() + m_geometryMem.getAttributeSize()
+    LOGI("Size of all data:    %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize() + m_geometryMem.getAttributeSize()
                                                           + m_geometryMem.getIndexSize() + m_geometryMem.getMeshSize()));
     LOGI("Chunks:              %11d\n", uint32_t(m_geometryMem.getChunkCount()));
   }
@@ -238,17 +256,23 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
       geom.meshletDesc.offset = geom.allocation.meshOffset;
       geom.meshletDesc.range  = cadgeom.meshlet.descSize;
       staging.upload(geom.meshletDesc, cadgeom.meshlet.descData);
+      // safety pad for potential out of memory access in task shader
+      geom.meshletDesc.range += sizeof(NVMeshlet::MeshletDesc) * NVMeshlet::MESHLETS_PER_TASK;
 
-      geom.meshletPrim.buffer = chunk.mesh;
-      geom.meshletPrim.offset = geom.allocation.meshOffset + NVMeshlet::computeCommonAlignedSize(cadgeom.meshlet.descSize);
-      geom.meshletPrim.range = cadgeom.meshlet.primSize;
+      geom.meshletPrim.buffer = chunk.meshIndices;
+      geom.meshletPrim.offset = geom.allocation.meshIndicesOffset;
+      geom.meshletPrim.range  = cadgeom.meshlet.primSize;
       staging.upload(geom.meshletPrim, cadgeom.meshlet.primData);
 
-      geom.meshletVert.buffer = chunk.mesh;
-      geom.meshletVert.offset = geom.allocation.meshOffset + NVMeshlet::computeCommonAlignedSize(cadgeom.meshlet.descSize)
-                                + NVMeshlet::computeCommonAlignedSize(cadgeom.meshlet.primSize);
+      geom.meshletVert.buffer = chunk.meshIndices;
+      geom.meshletVert.offset = geom.allocation.meshIndicesOffset + NVMeshlet::arrayIndicesAlignedSize(cadgeom.meshlet.primSize);
       geom.meshletVert.range = cadgeom.meshlet.vertSize;
-      staging.upload(geom.meshletVert, cadgeom.meshlet.vertData);
+      if (cadgeom.meshlet.vertData){
+        staging.upload(geom.meshletVert, cadgeom.meshlet.vertData);
+      }
+      else {
+        geom.meshletVert = geom.meshletPrim;
+      }
 
 #if USE_PER_GEOMETRY_VIEWS
       // views

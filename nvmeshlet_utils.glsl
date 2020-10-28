@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -49,8 +49,54 @@
 #define USE_EARLY_CLIPPINGCULL 1
 #endif
 
-//////////////////////////////////////////////////////////
+#if NVMESHLET_USE_PACKBASIC
   /*
+  Pack
+    // x
+    unsigned  bboxMinX : 8;
+    unsigned  bboxMinY : 8;
+    unsigned  bboxMinZ : 8;
+    unsigned  vertexMax : 8;
+
+    // y
+    unsigned  bboxMaxX : 8;
+    unsigned  bboxMaxY : 8;
+    unsigned  bboxMaxZ : 8;
+    unsigned  primMax : 8;
+    
+    // z
+      signed  coneOctX : 8;
+      signed  coneOctY : 8;
+      signed  coneAngle : 8;
+    unsigned  vertexBits : 8;
+    
+    // w
+    unsigned  packOffset : 32;
+    */
+
+void decodeMeshlet( uvec4 meshletDesc, 
+                    out uint vertMax, out uint primMax,
+                    out uint primStart, out uint primDiv,
+                    out uint vidxStart, out uint vidxBits, out uint vidxDiv)
+{
+  uint vMax  = (meshletDesc.x >> 24);
+  uint packOffset = meshletDesc.w;
+  
+  vertMax    = vMax;
+  primMax    = (meshletDesc.y >> 24);
+  
+  vidxStart  =  packOffset;
+  vidxDiv    = (meshletDesc.z >> 24);
+  vidxBits   = vidxDiv == 2 ? 16 : 0;
+  
+  primDiv    = 4;
+  primStart  =  (packOffset + ((vMax + 1 + vidxDiv - 1) / vidxDiv) + 1) & ~1;
+}
+
+#elif NVMESHLET_USE_ARRAYS
+
+  /*
+  Array
     // x
     unsigned bboxMinX   : 8;
     unsigned bboxMinY   : 8;
@@ -73,11 +119,6 @@
     signed   coneY      : 8;
     unsigned coneAngleU : 4;
   */
-  
-uint getMeshletNumTriangles(uvec4 meshletDesc)
-{
-  return (meshletDesc.y >> 24) + 1;
-}
 
 void decodeMeshlet(uvec4 meshletDesc, out uint vertMax, out uint primMax, out uint vertBegin, out uint primBegin)
 {
@@ -85,6 +126,18 @@ void decodeMeshlet(uvec4 meshletDesc, out uint vertMax, out uint primMax, out ui
   primBegin = (meshletDesc.w & 0xFFFFF) * NVMESHLET_PRIM_ALIGNMENT;
   vertMax   = (meshletDesc.x >> 24);
   primMax   = (meshletDesc.y >> 24);
+}
+
+#endif
+
+bool isMeshletValid(uvec4 meshletDesc)
+{
+  return meshletDesc.x != 0;
+}
+
+uint getMeshletNumTriangles(uvec4 meshletDesc)
+{
+  return (meshletDesc.y >> 24) + 1;
 }
 
 void decodeBbox(uvec4 meshletDesc, in ObjectData object, out vec3 oBboxMin, out vec3 oBboxMax)
@@ -114,11 +167,14 @@ vec3 oct_to_vec3(vec2 e) {
 
 void decodeNormalAngle(uvec4 meshletDesc, in ObjectData object, out vec3 oNormal, out float oAngle)
 {
+#if NVMESHLET_USE_PACKBASIC
+  uint packedVec =  meshletDesc.z;
+#else
   uint packedVec =  (((meshletDesc.z >> 20) & 0xFF) << 0)  |
                     (((meshletDesc.w >> 20) & 0xFF) << 8)  |
                     (((meshletDesc.z >> 28)       ) << 16) |
                     (((meshletDesc.w >> 28)       ) << 20);
-
+#endif
   vec3 unpackedVec = unpackSnorm4x8(packedVec).xyz;
   
   oNormal = oct_to_vec3(unpackedVec.xy) * object.winding;

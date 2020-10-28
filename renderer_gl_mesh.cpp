@@ -30,7 +30,7 @@
 
 #include <nvmath/nvmath_glsltypes.h>
 
-#include "nvmeshlet_builder.hpp"
+#include "nvmeshlet_array.hpp"
 #include "renderer.hpp"
 #include "resources_gl.hpp"
 
@@ -233,7 +233,7 @@ void RendererMeshGL::draw(const FrameConfig& global)
         assert(uint32_t(geo.vbo.offset / vertexSize) == uint32_t(geo.abo.offset / vertexAttributeSize));
 
         glUniform4ui(0, uint32_t(geo.topoMeshlet.offset / sizeof(NVMeshlet::MeshletDesc)),
-                     uint32_t(geo.topoPrim.offset / (NVMeshlet::PRIMITIVE_INDICES_PER_FETCH)),
+                     uint32_t(geo.topoPrim.offset),
                      uint32_t(geo.topoVert.offset / (di.shorts ? 2 : 4)), uint32_t(geo.vbo.offset / vertexSize));
 
 #endif

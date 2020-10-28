@@ -42,7 +42,6 @@
 
 #if IS_VULKAN
   // one of them provides uint8_t
-  #extension GL_KHX_shader_explicit_arithmetic_types_int8 : enable
   #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
   #extension GL_NV_gpu_shader5 : enable
     
@@ -121,6 +120,7 @@ layout(triangles) out;
   #else
     layout(push_constant) uniform pushConstant{
       uvec4     geometryOffsets;
+      // x: mesh, y: prim, z: index, w: vertex
     };
   #endif
 
@@ -138,8 +138,11 @@ layout(triangles) out;
   layout(std430, binding = GEOMETRY_SSBO_MESHLETDESC, set = DSET_GEOMETRY) buffer meshletDescBuffer {
     uvec4 meshletDescs[];
   };
-  layout(std430, binding = GEOMETRY_SSBO_PRIM, set = DSET_GEOMETRY) buffer primIndexBuffer {
-    uvec2 primIndices[];
+  layout(std430, binding = GEOMETRY_SSBO_PRIM, set = DSET_GEOMETRY) buffer primIndexBuffer1 {
+    uint  primIndices1[];
+  };
+  layout(std430, binding = GEOMETRY_SSBO_PRIM, set = DSET_GEOMETRY) buffer primIndexBuffer2 {
+    uvec2 primIndices2[];
   };
 
   layout(binding=GEOMETRY_TEX_IBO,  set=DSET_GEOMETRY)  uniform usamplerBuffer texIbo;
@@ -174,6 +177,9 @@ layout(triangles) out;
     samplerBuffer   texVbo;
     samplerBuffer   texAbo;
   };
+  
+  #define primIndices1  ((uint*)primIndices)
+  #define primIndices2  primIndices
   
 #endif
 
@@ -410,15 +416,81 @@ void main()
   uvec4 desc = meshletDescs[meshletID + geometryOffsets.x];
   uint vertMax;
   uint primMax;
-  uint vertBegin;
-  uint primBegin;
-  decodeMeshlet(desc, vertMax, primMax, vertBegin, primBegin);
+#if NVMESHLET_USE_PACKBASIC
+    uint vidxStart;
+    uint vidxBits;
+    uint vidxDiv;
+    uint primStart;
+    uint primDiv;
+    decodeMeshlet(desc, vertMax, primMax, primStart, primDiv, vidxStart, vidxBits, vidxDiv);
+
+    vidxStart += geometryOffsets.y / 4;
+    primStart += geometryOffsets.y / 4;
+
+#elif NVMESHLET_USE_ARRAYS
+    uint vertBegin;
+    uint primBegin;
+    decodeMeshlet(desc, vertMax, primMax, vertBegin, primBegin);
+
+    vertBegin += geometryOffsets.z;
+    primBegin += geometryOffsets.y;
+
+
+#else
+  #error "NVMESHLET_PACKING not supported"
+#endif
+
   uint primCount = primMax + 1;
   uint vertCount = vertMax + 1;
   
 
   // LOAD PHASE
+#if NVMESHLET_USE_PACKBASIC
+  // VERTEX PROCESSING
   
+  for (uint i = 0; i < uint(NVMSH_VERTEX_RUNS); i++) 
+  {
+    uint vert = laneID + i * GROUP_SIZE;
+    uint vertLoad = min(vert, vertMax);
+    clearVertexUsed(vert);
+    {
+      uint idx   = (vertLoad) / vidxDiv;
+      uint shift = (vertLoad) & (vidxDiv-1);
+      
+      uint vidx = primIndices1[idx + vidxStart];
+      vidx <<= vidxBits * (1-shift); 
+      vidx >>= vidxBits;
+      
+      vidx += geometryOffsets.w;
+    
+      vec4 hPos = procVertex(vert, vidx);
+      setVertexClip(vert, getCullBits(hPos));
+      
+    #if USE_EARLY_ATTRIBUTES
+      procAttributes(vert, vidx);
+    #else
+      writeVertexIndex(vert, vidx);
+    #endif
+    }
+  }
+  
+  // PRIMITIVE TOPOLOGY  
+  {
+    uint readBegin = primStart / 2;
+    uint readIndex = primCount * 3 - 1;
+    uint readMax   = readIndex / 8;
+
+    for (uint i = 0; i < uint(NVMSH_PRIMITIVE_INDICES_RUNS); i++)
+    {
+      uint read = laneID + i * GROUP_SIZE;
+      uint readUsed = min(read, readMax);
+      uvec2 topology = primIndices2[readBegin + readUsed];
+      nvmsh_writePackedPrimitiveIndices4x8NV(readUsed * 8 + 0, topology.x);
+      nvmsh_writePackedPrimitiveIndices4x8NV(readUsed * 8 + 4, topology.y);
+    }
+  }
+
+#elif NVMESHLET_USE_ARRAYS
   // VERTEX PROCESSING
   for (uint i = 0; i < uint(NVMSH_VERTEX_RUNS); i++) {
     
@@ -433,7 +505,10 @@ void main()
     // Most of the time we will have fully saturated vertex utilization,
     // but we may compute the last vertex redundantly.
     {
-      uint vidx = texelFetch(texIbo, int(vertBegin + min(vert,vertMax) + geometryOffsets.z)).x + geometryOffsets.w;
+      uint vidx = texelFetch(texIbo, int(vertBegin + min(vert,vertMax))).x;
+      
+      vidx += geometryOffsets.w;
+      
       vec4 hPos = procVertex(vert, vidx);
       setVertexClip(vert, getCullBits(hPos));
     
@@ -446,45 +521,25 @@ void main()
   }
   
   // PRIMITIVE TOPOLOGY
-  // there are three different packing rules atm
+  // 
   // FITTED_UINT8 gives fastest code and best bandwidth usage, at the sacrifice of
   // not maximizing actual primCount (primCount within meshlet may be always smaller than NVMESHLET_MAX_PRIMITIVES)
-  // TIGHT_UINT8 is the next best thing with slighly more complex code to load
-  // TRIANGLE_UINT32 provides the easist access, one primitive every 4 uint8 values, but wastes bandwidth
-#if  NVMESHLET_PACKING_FITTED_UINT8
-  // each run does read 8 indices per thread
+
+  // each run does read 8 single byte indices per thread
   // the number of primCount was clamped in such fashion in advance
-  // that it's guaranteed that gl_PrimiticeIndicesNV is sized big enough to allow the full 32-bit writes
+  // that it's guaranteed that gl_PrimitiveIndicesNV is sized big enough to allow the full 32-bit writes
   {
-    uint readBegin = primBegin / 8 + geometryOffsets.y;
+    uint readBegin = primBegin / 8;
     uint readIndex = primCount * 3 - 1;
     uint readMax = readIndex / 8;
 
-    for (uint i = 0; i < uint(NVMSH_PRIMITIVE_INDICES_RUNS); i++) {
+    for (uint i = 0; i < uint(NVMSH_PRIMITIVE_INDICES_RUNS); i++)
+    {
       uint read = laneID + i * GROUP_SIZE;
       uint readUsed = min(read, readMax);
-      //uvec2 topology = texelFetch(texPrim, int(readBegin + readUsed)).rg;
-      uvec2 topology = primIndices[readBegin + readUsed];
+      uvec2 topology = primIndices2[readBegin + readUsed];
       nvmsh_writePackedPrimitiveIndices4x8NV(readUsed * 8 + 0, topology.x);
       nvmsh_writePackedPrimitiveIndices4x8NV(readUsed * 8 + 4, topology.y);
-    }
-  }
-#elif NVMESHLET_PACKING_TRIANGLE_UINT32
-  {
-    uint readBegin = primBegin / 4 + geometryOffsets.y;
-    
-    for (uint i = 0; i < uint(NVMSH_PRIMITIVE_RUNS); i++) {
-      uint prim = laneID + i * GROUP_SIZE;
-      
-      prim = min(prim,primMax);
-      {
-        uint topology = texelFetch(texPrim, int(readBegin + prim)).x;
-        
-        uint idx = prim * 3;
-        gl_PrimitiveIndicesNV[idx + 0] = NVMSH_PACKED4X8_GET(topology, 0);
-        gl_PrimitiveIndicesNV[idx + 1] = NVMSH_PACKED4X8_GET(topology, 1);
-        gl_PrimitiveIndicesNV[idx + 2] = NVMSH_PACKED4X8_GET(topology, 2);
-      }
     }
   }
 #else

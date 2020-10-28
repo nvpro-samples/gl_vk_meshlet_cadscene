@@ -1479,7 +1479,7 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
         writeUpdates.push_back(
             m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
 
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
         writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
         writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
         writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
@@ -1487,7 +1487,7 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
         writeUpdates.push_back(
             m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
 
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
         writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
         writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
         writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
@@ -1498,7 +1498,7 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
           writeUpdates.push_back(
               m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
           writeUpdates.push_back(
               m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
           writeUpdates.push_back(
@@ -1510,7 +1510,7 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
           writeUpdates.push_back(
               m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshInfo));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
           writeUpdates.push_back(
               m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
           writeUpdates.push_back(
@@ -1647,9 +1647,7 @@ VkCommandBuffer ResourcesVK::createBoundingBoxCmdBuffer(VkCommandPool pool, cons
         lastShorts = di.shorts;
       }
 
-      uint32_t offsets[4] = {uint32_t(geovk.meshletDesc.offset / sizeof(NVMeshlet::MeshletDesc)),
-                             uint32_t(geovk.meshletPrim.offset / (NVMeshlet::PRIMITIVE_INDICES_PER_FETCH)),
-                             uint32_t(geovk.meshletVert.offset / (di.shorts ? 2 : 4)), uint32_t(geovk.vbo.offset / vertexSize)};
+      uint32_t offsets[4] = {uint32_t(geovk.meshletDesc.offset / sizeof(NVMeshlet::MeshletDesc)), 0, 0, 0};
       vkCmdPushConstants(cmd, setup.container.getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offsets), offsets);
 #endif
 

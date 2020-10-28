@@ -233,6 +233,7 @@ public:
     size_t aboSize;
     size_t iboSize;
     size_t meshSize;
+    size_t meshIndicesSize;
 
     MeshletTopology meshlet;
 
@@ -289,8 +290,10 @@ public:
     uint32_t extraAttributes = 0;
 
     // must not change order
-    uint32_t meshVertexCount    = 64;
-    uint32_t meshPrimitiveCount = 126;
+    uint32_t           meshVertexCount    = 64;
+    uint32_t           meshPrimitiveCount = 126;
+
+    MeshletBuilderType meshBuilder        = MESHLET_BUILDER_PACKBASIC;
   };
 
   std::vector<Material>   m_materials;

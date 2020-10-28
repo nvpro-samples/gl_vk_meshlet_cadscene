@@ -76,7 +76,11 @@ The following diagram illustrates the principle data structures that replace the
 
 ![mesh data](https://devblogs.nvidia.com/wp-content/uploads/2018/09/meshlets_data.png)
 
-Inside the sample you will find the meshlet builder in the `nvmeshlet_builder.hpp`file, which scans an index buffer and builds the above data structures as CPU arrays. It is used in the cadscene loader, look for `CadScene::buildMeshletTopology` inside `cadscene.cpp`.  Generating the data can take a bit time on the CPU, but is only done once and accelerated via OpenMP. 
+Inside the sample you will find one meshlet builder in the `nvmeshlet_array.hpp` file, which scans an index buffer and builds the above data structures as CPU arrays.
+
+The new default builder is within `nvmeshlet_packbasic.hpp` which combines primitive and vertex indices interleaved in a single buffer range and does an automatic 16 or 32 bit encoding. This also means we only need a single offset, rather than two, giving us more bits to play with.
+
+These builders are used in the cadscene loader, look for `CadScene::buildMeshletTopology` inside `cadscene.cpp`.  Generating the data can take a bit time on the CPU, but is only done once and accelerated via OpenMP. 
 
 At the end of the building process some statistics are printed to the console:
 ````

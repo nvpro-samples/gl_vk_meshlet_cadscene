@@ -35,11 +35,11 @@
 
 // keep in sync to nvmeshletbuilder.hpp PACKING configuration
 // (values are explained there)
-// if set we use a tight or fitted packing, stored in RG32UI texture
-// otherwise R32UI
-#define NVMESHLET_PACKING_FITTED_UINT8   1
-#define NVMESHLET_PRIM_ALIGNMENT        32
-#define NVMESHLET_VERTEX_ALIGNMENT      16
+
+#define NVMESHLET_PRIM_ALIGNMENT    32
+#define NVMESHLET_VERTEX_ALIGNMENT  16
+#define NVMESHLET_BLOCK_ELEMENTS    32
+#define NVMESHLET_PACK_ALIGNMENT    16
 
 #ifdef VULKAN 
 #define IS_VULKAN 1
@@ -70,5 +70,13 @@
 // set to zero for less resources being generated
 // also reduces runtime binding costs
 #define USE_PER_GEOMETRY_VIEWS         0
+#if defined(__cplusplus)
+
+  enum MeshletBuilderType {
+    MESHLET_BUILDER_PACKBASIC,
+    MESHLET_BUILDER_ARRAYS,
+  };
+
+#endif
 
 #endif

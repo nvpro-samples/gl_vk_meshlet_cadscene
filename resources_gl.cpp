@@ -125,13 +125,13 @@ bool ResourcesGL::initScene(const CadScene& cadscene)
     const GeometryMemoryGL::Chunk& chunk = m_scene.m_geometryMem.getChunk(i);
 
     geombindings16[GEOMETRY_SSBO_MESHLETDESC] = (chunk.meshADDR);
-    geombindings16[GEOMETRY_SSBO_PRIM]        = (chunk.meshADDR);
+    geombindings16[GEOMETRY_SSBO_PRIM]        = (chunk.meshIndicesADDR);
     geombindings16[GEOMETRY_TEX_IBO]          = (chunk.meshVertex16TEXADDR);
     geombindings16[GEOMETRY_TEX_VBO]          = (chunk.vboTEXADDR);
     geombindings16[GEOMETRY_TEX_ABO]          = (chunk.aboTEXADDR);
 
     geombindings32[GEOMETRY_SSBO_MESHLETDESC] = (chunk.meshADDR);
-    geombindings32[GEOMETRY_SSBO_PRIM]        = (chunk.meshADDR);
+    geombindings32[GEOMETRY_SSBO_PRIM]        = (chunk.meshIndicesADDR);
     geombindings32[GEOMETRY_TEX_IBO]          = (chunk.meshVertex32TEXADDR);
     geombindings32[GEOMETRY_TEX_VBO]          = (chunk.vboTEXADDR);
     geombindings32[GEOMETRY_TEX_ABO]          = (chunk.aboTEXADDR);
@@ -316,9 +316,7 @@ void ResourcesGL::drawBoundingBoxes(const class RenderList* NV_RESTRICT list) co
           lastShorts = di.shorts;
         }
 
-        glUniform4ui(0, uint32_t(geogl.topoMeshlet.offset / sizeof(NVMeshlet::MeshletDesc)),
-                     uint32_t(geogl.topoPrim.offset / (NVMeshlet::PRIMITIVE_INDICES_PER_FETCH)),
-                     uint32_t(geogl.topoVert.offset / (di.shorts ? 2 : 4)), uint32_t(geogl.vbo.offset / vertexSize));
+        glUniform4ui(0, uint32_t(geogl.topoMeshlet.offset / sizeof(NVMeshlet::MeshletDesc)), 0, 0, 0);
 #endif
 
         lastGeometry = di.geometryIndex;

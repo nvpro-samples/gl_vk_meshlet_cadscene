@@ -30,7 +30,8 @@
 #include <fileformats/cadscenefile.h>
 
 #include "config.h"
-#include "nvmeshlet_builder.hpp"
+#include "nvmeshlet_array.hpp"
+#include "nvmeshlet_packbasic.hpp"
 #include <nvh/geometry.hpp>
 #include <nvh/misc.hpp>
 
@@ -581,93 +582,192 @@ size_t fillIndexBuffer(int useShorts, const std::vector<unsigned int>& vertexind
   return vidxSize;
 }
 
-typedef NVMeshlet::Builder<uint32_t> MeshletBuilder;
-
-void fillMeshletTopology(MeshletBuilder::MeshletGeometry& geometry, CadScene::MeshletTopology& topo, int useShorts)
+void fillMeshletTopology(NVMeshlet::ArrayBuilder<uint32_t>::MeshletGeometry& geometry, CadScene::MeshletTopology& topo, int useShorts)
 {
   if(geometry.meshletDescriptors.empty())
     return;
 
   topo.vertSize = fillIndexBuffer(useShorts, geometry.vertexIndices, topo.vertData);
 
-  topo.descSize = sizeof(NVMeshlet::MeshletDesc) * geometry.meshletDescriptors.size();
+  topo.descSize = sizeof(NVMeshlet::MeshletArrayDesc) * geometry.meshletDescriptors.size();
   topo.primSize = sizeof(NVMeshlet::PrimitiveIndexType) * geometry.primitiveIndices.size();
 
   topo.descData = malloc(topo.descSize);
   topo.primData = malloc(topo.primSize);
 
-  memcpy(topo.descData, geometry.meshletDescriptors.data(), geometry.meshletDescriptors.size() * sizeof(NVMeshlet::MeshletDesc));
+  memcpy(topo.descData, geometry.meshletDescriptors.data(), topo.descSize);
   memcpy(topo.primData, geometry.primitiveIndices.data(), topo.primSize);
 }
 
+void fillMeshletTopology(NVMeshlet::PackBasicBuilder::MeshletGeometry& geometry, CadScene::MeshletTopology& topo, int useShorts)
+{
+  if(geometry.meshletDescriptors.empty())
+    return;
+
+  topo.vertSize = NVMESHLET_PACK_ALIGNMENT;
+  topo.descSize = sizeof(NVMeshlet::MeshletPackBasicDesc) * geometry.meshletDescriptors.size();
+  topo.primSize = sizeof(NVMeshlet::PackBasicType) * geometry.meshletPacks.size();
+
+  topo.descData = malloc(topo.descSize);
+  topo.primData = malloc(topo.primSize);
+
+  memcpy(topo.descData, geometry.meshletDescriptors.data(), topo.descSize);
+  memcpy(topo.primData, geometry.meshletPacks.data(), topo.primSize);
+}
+
+
 void CadScene::buildMeshletTopology(const CSFile* csf)
 {
-  NVMeshlet::Builder<uint32_t> meshletBuilder;
-  meshletBuilder.setup(m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount);
-
   NVMeshlet::Stats statsGlobal;
+  uint32_t         groups              = 0;
+  size_t           meshActualSizeTotal = 0;
 
-  uint32_t groups = 0;
+#define MESHLET_ERRORCHECK 0
+
+  if(m_cfg.meshBuilder == MESHLET_BUILDER_PACKBASIC)
+  {
+    NVMeshlet::PackBasicBuilder meshletBuilder;
+    meshletBuilder.setup(m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount, false);
 
 #pragma omp parallel for
-  for(int g = 0; g < csf->numGeometries; g++)
-  {
-    const CSFGeometry* geo  = csf->geometries + g;
-    Geometry&          geom = m_geometry[g];
-
-    NVMeshlet::Builder<uint32_t>::MeshletGeometry meshletGeometry;
-
-    uint32_t numMeshlets = 0;
-    uint32_t indexOffset = 0;
-    for(uint32_t p = 0; p < geo->numParts; p++)
+    for(int g = 0; g < csf->numGeometries; g++)
     {
-      uint32_t numIndex = geo->parts[p].numIndexSolid;
+      const CSFGeometry*    csfgeom = csf->geometries + g;
+      Geometry&             geom    = m_geometry[g];
 
-      geom.parts[p].meshSolid.offset = numMeshlets;
+      NVMeshlet::PackBasicBuilder::MeshletGeometry meshletGeometry;
 
-      uint32_t processedIndices = meshletBuilder.buildMeshlets(meshletGeometry, numIndex, geo->indexSolid + indexOffset);
-      if(processedIndices != numIndex)
+      uint32_t               numMeshlets = 0;
+      uint32_t               indexOffset = 0;
+      const unsigned int*    indices     = csfgeom->indexSolid;
+      const CSFGeometryPart* parts       = csfgeom->parts;
+      for(size_t p = 0; p < geom.parts.size(); p++)
       {
-        LOGE("warning: geometry meshlet incomplete %d\n", g);
+        uint32_t numIndex              = parts[p].numIndexSolid;
+        geom.parts[p].meshSolid.offset = numMeshlets;
+
+        uint32_t processedIndices =
+          meshletBuilder.buildMeshlets<uint32_t>(meshletGeometry, numIndex, indices + indexOffset);
+        if(processedIndices != numIndex)
+        {
+          LOGE("warning: geometry meshlet incomplete %d\n", g);
+        }
+
+        geom.parts[p].meshSolid.count = (uint32_t)meshletGeometry.meshletDescriptors.size() - numMeshlets;
+        numMeshlets                   = (uint32_t)meshletGeometry.meshletDescriptors.size();
+        indexOffset += numIndex;
       }
 
-      geom.parts[p].meshSolid.count = (uint32_t)meshletGeometry.meshletDescriptors.size() - numMeshlets;
-      numMeshlets                   = (uint32_t)meshletGeometry.meshletDescriptors.size();
-      indexOffset += numIndex;
-    }
+      geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
 
-    geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
-
-    meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
-                                            geo->vertex, sizeof(float) * 3);
-    if(m_cfg.verbose)
-    {
-#if 0
-      int errorcode = meshletBuilder.validate(meshletGeometries[g], 0, geo->numVertices - 1, geo->numIndexSolid, geo->indexSolid);
-      if (errorcode) {
-        LOGE("geometry %d: meshlet error %d\n", g, errorcode);
-      }
+      meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
+        (const float*)geom.vboData, sizeof(Vertex));
+      if(m_cfg.verbose)
+      {
+#if MESHLET_ERRORCHECK
+        NVMeshlet::StatusCode errorcode = meshletBuilder.errorCheck<uint32_t>(meshletGeometry, 0, csfgeom->numVertices - 1,
+          csfgeom->numIndexSolid, csfgeom->indexSolid);
+        if(errorcode)
+        {
+          LOGE("geometry %d: meshlet error %d\n", g, errorcode);
+        }
 #endif
 
-      NVMeshlet::Stats statsLocal;
-      meshletBuilder.appendStats(meshletGeometry, statsLocal);
+        NVMeshlet::Stats statsLocal;
+        meshletBuilder.appendStats(meshletGeometry, statsLocal);
+
+#pragma omp critical
+        {
+          statsGlobal.append(statsLocal);
+        }
+      }
+
+      fillMeshletTopology(meshletGeometry, geom.meshlet, geom.useShorts);
+
+      geom.meshSize        = geom.meshlet.descSize;
+      geom.meshIndicesSize = geom.meshlet.primSize + geom.meshlet.vertSize;
+
+      size_t meshActualSize = geom.meshlet.descSize + geom.meshlet.primSize + geom.meshlet.vertSize;
 
 #pragma omp critical
       {
-        statsGlobal.append(statsLocal);
+        m_meshSize += geom.meshSize + geom.meshIndicesSize;
+        groups += numMeshlets;
+        meshActualSizeTotal += meshActualSize;
       }
     }
+  }
+  else
+  {
+    NVMeshlet::ArrayBuilder<uint32_t> meshletBuilder;
+    meshletBuilder.setup(m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount, false);
 
-    fillMeshletTopology(meshletGeometry, geom.meshlet, geom.useShorts);
 
-    geom.meshSize = NVMeshlet::computeCommonAlignedSize(geom.meshlet.descSize)
-                    + NVMeshlet::computeCommonAlignedSize(geom.meshlet.primSize)
-                    + NVMeshlet::computeCommonAlignedSize(geom.meshlet.vertSize);
+#pragma omp parallel for
+    for(int g = 0; g < csf->numGeometries; g++)
+    {
+      const CSFGeometry*    csfgeom = csf->geometries + g;
+      Geometry&             geom    = m_geometry[g];
+
+      NVMeshlet::ArrayBuilder<uint32_t>::MeshletGeometry meshletGeometry;
+
+      uint32_t               numMeshlets = 0;
+      uint32_t               indexOffset = 0;
+      const unsigned int*    indices     = csfgeom->indexSolid;
+      const CSFGeometryPart* parts       = csfgeom->parts;
+      for(size_t p = 0; p < geom.parts.size(); p++)
+      {
+        uint32_t numIndex              = parts[p].numIndexSolid;
+        geom.parts[p].meshSolid.offset = numMeshlets;
+
+        uint32_t processedIndices = meshletBuilder.buildMeshlets(meshletGeometry, numIndex, indices + indexOffset);
+        if(processedIndices != numIndex)
+        {
+          LOGE("warning: geometry meshlet incomplete %d\n", g);
+        }
+
+        geom.parts[p].meshSolid.count = (uint32_t)meshletGeometry.meshletDescriptors.size() - numMeshlets;
+        numMeshlets                   = (uint32_t)meshletGeometry.meshletDescriptors.size();
+        indexOffset += numIndex;
+      }
+
+      geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
+
+      meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
+                                              (const float*)geom.vboData, sizeof(Vertex));
+      if(m_cfg.verbose)
+      {
+#if MESHLET_ERRORCHECK
+        NVMeshlet::StatusCode errorcode = meshletBuilder.errorCheck<uint32_t>(meshletGeometries[g], 0, csfgeom->numVertices - 1,
+                                                                              csfgeom->numIndexSolid, csfgeom->indexSolid);
+        if(errorcode == NVMeshlet)
+        {
+          LOGE("geometry %d: meshlet error %d\n", g, errorcode);
+        }
+#endif
+
+        NVMeshlet::Stats statsLocal;
+        meshletBuilder.appendStats(meshletGeometry, statsLocal);
 
 #pragma omp critical
-    {
-      m_meshSize += geom.meshSize;
-      groups += numMeshlets;
+        {
+          statsGlobal.append(statsLocal);
+        }
+      }
+
+      fillMeshletTopology(meshletGeometry, geom.meshlet, geom.useShorts);
+
+      geom.meshSize        = geom.meshlet.descSize;
+      geom.meshIndicesSize = NVMeshlet::arrayIndicesAlignedSize(geom.meshlet.primSize) + geom.meshlet.vertSize;
+
+      size_t meshActualSize = geom.meshlet.descSize + geom.meshlet.primSize + geom.meshlet.vertSize;
+
+#pragma omp critical
+      {
+        m_meshSize += geom.meshSize + geom.meshIndicesSize;
+        groups += numMeshlets;
+        meshActualSizeTotal += meshActualSize;
+      }
     }
   }
 
@@ -678,5 +778,7 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
     statsGlobal.fprint(stdout);
   }
 
-  LOGI("meshlet total: %d\n", groups);
+  LOGI("meshlet total: %9d meshlets, %7d KB (w %.2f)\n", groups, m_meshSize / 1024,
+       (double(m_meshSize) / double(meshActualSizeTotal) - 1.0));
 }
+

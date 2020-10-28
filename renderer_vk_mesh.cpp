@@ -25,7 +25,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "nvmeshlet_builder.hpp"
+#include "nvmeshlet_array.hpp"
 #include "renderer.hpp"
 #include "resources_vk.hpp"
 #include <algorithm>
@@ -148,7 +148,7 @@ private:
         assert(uint32_t(geo.vbo.offset / vertexSize) == uint32_t(geo.abo.offset / vertexAttributeSize));
 
         uint32_t offsets[4] = {uint32_t(geo.meshletDesc.offset / sizeof(NVMeshlet::MeshletDesc)),
-                               uint32_t(geo.meshletPrim.offset / (NVMeshlet::PRIMITIVE_INDICES_PER_FETCH)),
+                               uint32_t(geo.meshletPrim.offset),
                                uint32_t(geo.meshletVert.offset / (di.shorts ? 2 : 4)), uint32_t(geo.vbo.offset / vertexSize)};
 
         vkCmdPushConstants(cmd, setup.container.getPipeLayout(),
