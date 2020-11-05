@@ -738,9 +738,9 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
       if(m_cfg.verbose)
       {
 #if MESHLET_ERRORCHECK
-        NVMeshlet::StatusCode errorcode = meshletBuilder.errorCheck<uint32_t>(meshletGeometries[g], 0, csfgeom->numVertices - 1,
-                                                                              csfgeom->numIndexSolid, csfgeom->indexSolid);
-        if(errorcode == NVMeshlet)
+        NVMeshlet::StatusCode errorcode = meshletBuilder.errorCheck(meshletGeometry, 0, csfgeom->numVertices - 1,
+                                                                    csfgeom->numIndexSolid, csfgeom->indexSolid);
+        if(errorcode)
         {
           LOGE("geometry %d: meshlet error %d\n", g, errorcode);
         }

@@ -147,7 +147,6 @@ struct MeshletPackBasicDesc
   void setBBox(uint8_t const bboxMin[3], uint8_t const bboxMax[3])
   {
     fieldX |= pack(bboxMin[0], 8, 0) | pack(bboxMin[1], 8, 8) | pack(bboxMin[2], 8, 16);
-
     fieldY |= pack(bboxMax[0], 8, 0) | pack(bboxMax[1], 8, 8) | pack(bboxMax[2], 8, 16);
   }
 
@@ -205,13 +204,13 @@ struct MeshletPackBasic
   union
   {
     uint32_t data32[1];
-    uint32_t data16[1];
+    uint16_t data16[1];
     uint8_t  data8[1];
   };
 
   inline void setVertexIndex(uint32_t PACKED_SIZE, uint32_t vertex, uint32_t vertexPack, uint32_t indexValue)
   {
-#if 0
+#if 1
     if (vertexPack == 1){
       data32[vertex] = indexValue;
     }
@@ -230,12 +229,12 @@ struct MeshletPackBasic
 
   inline uint32_t getVertexIndex(uint32_t vertex, uint32_t vertexPack) const
   {
-#if 0
+#if 1
     return (vertexPack == 1) ? data32[vertex] : data16[vertex];
 #else
     uint32_t idx   = vertex / vertexPack;
-    uint32_t shift = vertex % vertexPack;
-    uint32_t bits  = vertexPack ? 16 : 0;
+    uint32_t shift = vertex & (vertexPack-1);
+    uint32_t bits  = vertexPack == 2 ? 16 : 0;
 
     uint32_t indexValue = data32[idx];
     indexValue <<= ((1 - shift) * bits);
