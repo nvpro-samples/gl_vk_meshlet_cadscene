@@ -64,7 +64,6 @@ class Resources
 {
 public:
   static bool     s_vkMeshSupport;
-  static bool     s_vkNVglslExtension;
   static uint32_t s_vkDevice;
   static uint32_t s_glDevice;
 

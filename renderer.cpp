@@ -40,7 +40,6 @@
 
 namespace meshlettest {
 bool     Resources::s_vkMeshSupport     = false;
-bool     Resources::s_vkNVglslExtension = false;
 uint32_t Resources::s_vkDevice          = 0;
 uint32_t Resources::s_glDevice          = 0;
 

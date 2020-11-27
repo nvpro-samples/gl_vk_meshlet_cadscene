@@ -506,7 +506,6 @@ bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepe
 {
   m_shaderManager.init(m_device);
   m_shaderManager.m_filetype       = nvh::ShaderFileManager::FILETYPE_GLSL;
-  m_shaderManager.m_useNVextension = s_vkNVglslExtension;
 
   m_shaderManager.addDirectory(path);
   m_shaderManager.addDirectory(std::string("GLSL_" PROJECT_NAME));

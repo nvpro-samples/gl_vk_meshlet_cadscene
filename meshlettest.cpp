@@ -988,7 +988,6 @@ void Sample::setupConfigParameters()
   m_parameterList.addFilename("viewpoints", &m_viewpointFilename);
   m_parameterList.add("viewpoint", &m_tweak.viewPoint);
   m_parameterList.add("animate", &m_tweak.animate);
-  m_parameterList.add("vknvglsl", &Resources::s_vkNVglslExtension);
 
   m_parameterList.add("noui", &m_useUI, false);
 
