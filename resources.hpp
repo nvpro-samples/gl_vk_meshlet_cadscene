@@ -53,11 +53,11 @@ inline size_t alignedSize(size_t sz, size_t align)
 
 struct FrameConfig
 {
-  SceneData         sceneUbo;
-  int               winWidth;
-  int               winHeight;
-  const ImDrawData* imguiDrawData = nullptr;
-  bool              meshletBoxes  = false;
+  SceneData   sceneUbo;
+  int         winWidth;
+  int         winHeight;
+  ImDrawData* imguiDrawData = nullptr;
+  bool        meshletBoxes  = false;
 };
 
 class Resources

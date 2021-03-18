@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
 
 get_filename_component(PROJNAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 Project(${PROJNAME})
@@ -10,28 +10,22 @@ SET(MODEL_DOWNLOAD_${PROJNAME} ON CACHE BOOL "CHECK to download the 3d models ne
 
 #####################################################################################
 # look for shared_sources 1) as a sub-folder 2) at some other locations
-# this cannot be put anywhere else since we still didn't find CMakeLists_include.txt yet
+# this cannot be put anywhere else since we still didn't find setup.cmake yet
 #
-if(NOT BASE_DIRECTORY) # if not defined, it means this cmake file was called as the first entry point and not included
-  # check if the external repository is outside or inside the project (as a sub-module)
-  # testing the file CMakeLists_include.txt because when sub-modules are not cloned, the folders are still there...
-  # we also assume here that if shared_sources is there, shared_external is, too...
-  SET(BASE_DIRECTORY "" CACHE FILEPATH "folder containing shared_sources")
-  SET(ADD_SUBDIR_BELOW 1)
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/shared_sources/CMakeLists_include.txt)
-    SET(BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-  elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../shared_sources/CMakeLists_include.txt)
-    SET(BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..)
-  elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../../shared_sources/CMakeLists_include.txt)
-    SET(BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-  else()
-  endif()
-endif(NOT BASE_DIRECTORY)
+if(NOT BASE_DIRECTORY)
 
-if(EXISTS ${BASE_DIRECTORY}/shared_sources/CMakeLists_include.txt)
-  INCLUDE(${BASE_DIRECTORY}/shared_sources/CMakeLists_include.txt)
+  find_path(BASE_DIRECTORY
+    NAMES shared_sources/cmake/setup.cmake
+    PATHS ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
+    REQUIRED
+    DOC "Directory containing shared_sources"
+    )
+endif()
+if(EXISTS ${BASE_DIRECTORY}/shared_sources/cmake/setup.cmake)
+  include(${BASE_DIRECTORY}/shared_sources/cmake/setup.cmake)
+  include(${BASE_DIRECTORY}/shared_sources/cmake/utilities.cmake)
 else()
-  Message(FATAL_ERROR "could not find base directory, please set BASE_DIRECTORY to folder containing shared_sources")
+  message(FATAL_ERROR "could not find base directory, please set BASE_DIRECTORY to folder containing shared_sources")
 endif()
     
 _add_project_definitions(${PROJNAME})
@@ -71,20 +65,9 @@ add_definitions(-DCSF_ZIP_SUPPORT=1)
 
 #####################################################################################
 # download models
-unset(ASSET_FILES)
-if(MODEL_DOWNLOAD_${PROJNAME})
-  set(FILELIST 
-  "worldcar.csf.gz"
-  "blade.csf.gz"
-  )
-  _download_files(
-    "${FILELIST}"
-    "http://developer.download.nvidia.com/ProGraphics/nvpro-samples"
-    ${DOWNLOAD_TARGET_DIR}
-    0
-    ASSET_FILES
-  )
-endif()
+
+download_files(FILENAMES worldcar.csf.gz blade.csf.gz)
+
 
 #####################################################################################
 # Source files for this project
@@ -176,9 +159,9 @@ endif()
 # copies binaries that need to be put next to the exe files (ZLib, etc.)
 #
 
-_copy_binaries_to_target( ${VK_EXENAME} )
+_finalize_target( ${VK_EXENAME} )
 if(NOT BUILD_${PROJNAME}_VULKAN_ONLY)
-  _copy_binaries_to_target( ${GL_VK_EXENAME} )
+  _finalize_target( ${GL_VK_EXENAME} )
 endif()
 
 LIST(APPEND GLSL_FILES "common.h")
@@ -190,5 +173,3 @@ LIST(APPEND ASSET_FILES "worldcar_meshlet_viewpoints.txt")
 
 install(FILES ${GLSL_FILES} CONFIGURATIONS Release DESTINATION "bin_${ARCH}/GLSL_${PROJNAME}")
 install(FILES ${GLSL_FILES} CONFIGURATIONS Debug DESTINATION "bin_${ARCH}_debug/GLSL_${PROJNAME}")
-install(FILES ${ASSET_FILES} CONFIGURATIONS Debug DESTINATION "bin_${ARCH}_debug")
-install(FILES ${ASSET_FILES} CONFIGURATIONS Release DESTINATION "bin_${ARCH}")

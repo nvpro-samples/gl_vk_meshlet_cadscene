@@ -25,8 +25,6 @@
 #include "resources_vk.hpp"
 #include "renderer.hpp"
 
-#include <imgui/imgui_impl_vk.h>
-
 #include <algorithm>
 
 #if HAS_OPENGL
@@ -34,6 +32,7 @@
 #endif
 #include <nvh/nvprint.hpp>
 
+#include "imgui/backends/imgui_impl_vulkan.h"
 #include "nvmeshlet_builder.hpp"
 
 extern bool vulkanInitLibrary();
@@ -177,7 +176,7 @@ void ResourcesVK::blitFrame(const FrameConfig& global)
     vkCmdSetViewport(cmd, 0, 1, &m_framebuffer.viewportUI);
     vkCmdSetScissor(cmd, 0, 1, &m_framebuffer.scissorUI);
 
-    ImGui::RenderDrawDataVK(cmd, global.imguiDrawData);
+    ImGui_ImplVulkan_RenderDrawData(global.imguiDrawData, cmd);
 
     vkCmdEndRenderPass(cmd);
 
@@ -505,7 +504,7 @@ void ResourcesVK::deinit()
 bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepend)
 {
   m_shaderManager.init(m_device);
-  m_shaderManager.m_filetype       = nvh::ShaderFileManager::FILETYPE_GLSL;
+  m_shaderManager.m_filetype = nvh::ShaderFileManager::FILETYPE_GLSL;
 
   m_shaderManager.addDirectory(path);
   m_shaderManager.addDirectory(std::string("GLSL_" PROJECT_NAME));
@@ -925,10 +924,6 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   }
 
 
-  if(m_framebuffer.msaa != oldMsaa)
-  {
-    ImGui::ReInitPipelinesVK(m_framebuffer.passUI);
-  }
   if(m_framebuffer.msaa != oldMsaa && hasPipes())
   {
     // reinit pipelines
@@ -1595,8 +1590,8 @@ VkCommandBuffer ResourcesVK::createBoundingBoxCmdBuffer(VkCommandPool pool, cons
   size_t                                  numItems   = list->m_drawItems.size();
   size_t                                  vertexSize = list->m_scene->getVertexSize();
 
-  const CadScene* NV_RESTRICT scene  = list->m_scene;
-  const ResourcesVK* NV_RESTRICT res = this;
+  const CadScene* NV_RESTRICT    scene = list->m_scene;
+  const ResourcesVK* NV_RESTRICT res   = this;
 
   const ResourcesVK::DrawSetup& setup = res->m_setupBbox;
 

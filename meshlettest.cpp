@@ -28,7 +28,7 @@
 /* Contact ckubisch@nvidia.com (Christoph Kubisch) for feedback */
 
 
-#include <imgui/imgui_helper.h>
+#include <imgui/extras/imgui_helper.h>
 
 #if HAS_OPENGL
 #include <nvgl/appwindowprofiler_gl.hpp>
@@ -43,8 +43,8 @@
 #include <nvvk/context_vk.hpp>
 
 #include <nvh/cameracontrol.hpp>
-#include <nvh/geometry.hpp>
 #include <nvh/fileoperations.hpp>
+#include <nvh/geometry.hpp>
 #include <nvh/misc.hpp>
 
 #include "nvmeshlet_builder.hpp"
@@ -65,7 +65,7 @@ void setupVulkanContextInfo(nvvk::ContextCreateInfo& info)
   static VkPhysicalDeviceFloat16Int8FeaturesKHR float16int8Features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR};
   info.apiMajor                                                     = 1;
   info.apiMinor                                                     = 1;
-  info.compatibleDeviceIndex                                                       = Resources::s_vkDevice;
+  info.compatibleDeviceIndex                                        = Resources::s_vkDevice;
 #if HAS_OPENGL
   // not compatible with GL extension mechanism
   info.removeInstanceLayer("VK_LAYER_KHRONOS_validation");
@@ -229,7 +229,7 @@ public:
   CadScene                  m_scene;
   std::vector<unsigned int> m_renderersSorted;
 
-  Renderer* NV_RESTRICT m_renderer;
+  Renderer* NV_RESTRICT  m_renderer;
   Resources* NV_RESTRICT m_resources;
   RenderList             m_renderList;
   FrameConfig            m_frameConfig;
@@ -359,7 +359,8 @@ std::string Sample::getShaderPrepend()
          + nvh::stringFormat("#define NVMESHLET_PRIMITIVE_COUNT %d\n", m_modelConfig.meshPrimitiveCount)
          + nvh::stringFormat("#define NVMESHLET_USE_PACKBASIC %d\n", m_modelConfig.meshBuilder == MESHLET_BUILDER_PACKBASIC ? 1 : 0)
          + nvh::stringFormat("#define NVMESHLET_USE_ARRAYS %d\n", m_modelConfig.meshBuilder == MESHLET_BUILDER_ARRAYS ? 1 : 0)
-         + nvh::stringFormat("#define NVMESHLET_PRIMBITS %d\n", NVMeshlet::findMSB(std::max(32u, m_modelConfig.meshVertexCount) - 1) + 1)
+         + nvh::stringFormat("#define NVMESHLET_PRIMBITS %d\n",
+                             NVMeshlet::findMSB(std::max(32u, m_modelConfig.meshVertexCount) - 1) + 1)
          + nvh::stringFormat("#define EXTRA_ATTRIBUTES %d\n", m_modelConfig.extraAttributes)
          + nvh::stringFormat("#define USE_MESH_SHADERCULL %d\n", m_tweak.useMeshShaderCull ? 1 : 0)
          + nvh::stringFormat("#define USE_BACKFACECULL %d\n", m_tweak.useBackFaceCull ? 1 : 0)
@@ -383,11 +384,12 @@ bool Sample::initScene(const char* filename, int clones, int cloneaxis)
   if(!nvh::fileExists(filename))
   {
     modelFilename = nvh::getFileName(filename);
-    std::vector<std::string> searchPaths;
-    searchPaths.push_back("./");
-    searchPaths.push_back(exePath() + PROJECT_RELDIRECTORY + "/");
-    searchPaths.push_back(exePath() + PROJECT_DOWNLOAD_RELDIRECTORY + "/");
-    modelFilename = nvh::findFile(modelFilename, searchPaths);
+    std::vector<std::string> directories;
+    directories.push_back(NVPSystem::exePath());
+    directories.push_back(NVPSystem::exePath() + "/media");
+    directories.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY));
+    directories.push_back(NVPSystem::exePath() + std::string(PROJECT_DOWNLOAD_RELDIRECTORY));
+    modelFilename = nvh::findFile(modelFilename, directories);
   }
 
   m_scene.unload();
@@ -688,7 +690,8 @@ void Sample::processUI(int width, int height, double time)
 #endif
     ImGui::Separator();
     ImGuiH::InputIntClamped("meshlet vertices", &m_modelConfig.meshVertexCount, 32, 256, 32, 32, ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGuiH::InputIntClamped("meshlet primitives", &m_modelConfig.meshPrimitiveCount, 32, 256, 32, 32, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGuiH::InputIntClamped("meshlet primitives", &m_modelConfig.meshPrimitiveCount, 32, 256, 32, 32,
+                            ImGuiInputTextFlags_EnterReturnsTrue);
     ImGuiH::InputIntClamped("extra v4 attributes", &m_modelConfig.extraAttributes, 0, 7);
     ImGui::Checkbox("model fp16 attributes", &m_modelConfig.fp16);
     ImGuiH::InputIntClamped("model copies", &m_tweak.copies, 1, 256, 1, 10, ImGuiInputTextFlags_EnterReturnsTrue);
@@ -718,8 +721,8 @@ void Sample::processUI(int width, int height, double time)
       {
         nvh::Profiler::TimerInfo info;
         m_profiler.getTimerInfo("Render", info);
-        m_statsCpuTime = info.cpu.average;
-        m_statsGpuTime = info.gpu.average;
+        m_statsCpuTime  = info.cpu.average;
+        m_statsGpuTime  = info.gpu.average;
         m_lastFrameTime = time;
         m_frames        = -1;
       }
@@ -1035,13 +1038,16 @@ void Sample::setupConfigParameters()
 
 bool Sample::validateConfig()
 {
-  if (m_modelFilename.empty())
+  if(m_modelFilename.empty())
   {
-    std::vector<std::string> searchPaths;
-    searchPaths.push_back("./");
-    searchPaths.push_back(exePath() + PROJECT_RELDIRECTORY + "/");
-    std::string configFile = nvh::findFile("worldcar_meshlet.cfg", searchPaths);
-    if (!configFile.empty()) {
+    std::vector<std::string> directories;
+    directories.push_back(NVPSystem::exePath());
+    directories.push_back(NVPSystem::exePath() + "/media");
+    directories.push_back(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY));
+    directories.push_back(NVPSystem::exePath() + std::string(PROJECT_DOWNLOAD_RELDIRECTORY));
+    std::string configFile = nvh::findFile("worldcar_meshlet.cfg", directories);
+    if(!configFile.empty())
+    {
       parseConfigFile(configFile.c_str());
     }
   }
@@ -1080,7 +1086,7 @@ using namespace meshlettest;
 
 int main(int argc, const char** argv)
 {
-  NVPSystem system(argv[0], PROJECT_NAME);
+  NVPSystem system(PROJECT_NAME);
 
   omp_set_num_threads(std::thread::hardware_concurrency());
 

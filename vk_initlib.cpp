@@ -42,7 +42,7 @@ bool vulkanInitLibrary()
   if (!load_GL_NV_draw_vulkan_image(nvgl::ContextWindow::sysGetProcAddress)) return false;
 #endif
 
-#if USEVULKANSDK
+#if NVP_SUPPORTS_VULKANSDK
   return true;
 #else
   if (__nvkglGetVkProcAddrNV){

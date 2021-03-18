@@ -27,7 +27,7 @@
 #include "renderer.hpp"
 
 #include "nvmeshlet_builder.hpp"
-#include <imgui/imgui_impl_gl.h>
+#include <imgui/backends/imgui_impl_gl.h>
 
 namespace meshlettest {
 
