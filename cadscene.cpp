@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2018, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2017-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -661,7 +661,7 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
       geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
 
       meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
-        (const float*)geom.vboData, sizeof(Vertex));
+        (const float*)csfgeom->vertex, sizeof(float) * 3);
       if(m_cfg.verbose)
       {
 #if MESHLET_ERRORCHECK
@@ -734,7 +734,7 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
       geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
 
       meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
-                                              (const float*)geom.vboData, sizeof(Vertex));
+                                              csfgeom->vertex, sizeof(float) * 3);
       if(m_cfg.verbose)
       {
 #if MESHLET_ERRORCHECK

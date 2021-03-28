@@ -1,5 +1,5 @@
 /*-----------------------------------------------------------------------
-  Copyright (c) 2014-2016, NVIDIA. All rights reserved.
+  Copyright (c) 2014-2021, NVIDIA. All rights reserved.
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions
   are met:
@@ -148,11 +148,6 @@ bool ResourcesGL::initPrograms(const std::string& path, const std::string& prepe
   m_progManager.addDirectory(path);
   m_progManager.addDirectory(std::string("GLSL_" PROJECT_NAME));
   m_progManager.addDirectory(path + std::string(PROJECT_RELDIRECTORY));
-
-  m_progManager.registerInclude("draw.frag.glsl", "draw.frag.glsl");
-  m_progManager.registerInclude("nvmeshlet_utils.glsl", "nvmeshlet_utils.glsl");
-  m_progManager.registerInclude("config.h", "config.h");
-  m_progManager.registerInclude("common.h", "common.h");
 
   m_progManager.m_prepend        = prepend + "#define IS_VULKAN 0\n";
   m_progManager.m_preprocessOnly = false;

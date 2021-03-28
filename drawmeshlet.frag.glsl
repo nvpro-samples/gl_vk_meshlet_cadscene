@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+/* Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,9 +26,61 @@
  */
 
 #version 450
+/**/
 
-#extension GL_GOOGLE_include_directive : enable
 #extension GL_ARB_shading_language_include : enable
+#include "common.h"
 
-#include "draw.frag.glsl"
+//////////////////////////////////////////////////
+// UNIFORMS
 
+#if IS_VULKAN
+
+  layout(std140,binding= SCENE_UBO_VIEW,set=DSET_SCENE) uniform sceneBuffer {
+    SceneData scene;
+  };
+
+  layout(std140,binding=0,set=DSET_OBJECT) uniform objectBuffer {
+    ObjectData object;
+  };
+  
+#else
+
+  layout(std140,binding=UBO_SCENE_VIEW) uniform sceneBuffer {
+    SceneData scene;
+  };
+
+  layout(std140,binding=UBO_OBJECT) uniform objectBuffer {
+    ObjectData object;
+  };
+
+#endif
+
+//////////////////////////////////////////////////
+// INPUT
+
+layout(location=0) in Interpolants {
+  vec3  wPos;
+  float dummy;
+  vec3  wNormal;
+  flat uint meshletID;
+#if EXTRA_ATTRIBUTES
+  vec4 xtra[EXTRA_ATTRIBUTES];
+#endif
+} IN;
+
+//////////////////////////////////////////////////
+// OUTPUT
+
+layout(location=0,index=0) out vec4 out_Color;
+
+
+//////////////////////////////////////////////////
+// EXECUTION
+
+#include "draw_shading.glsl"
+
+void main()
+{
+  out_Color = shading();
+}

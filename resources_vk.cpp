@@ -1,5 +1,5 @@
 /*-----------------------------------------------------------------------
-  Copyright (c) 2014-2016, NVIDIA. All rights reserved.
+  Copyright (c) 2014-2021, NVIDIA. All rights reserved.
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions
   are met:
@@ -509,11 +509,6 @@ bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepe
   m_shaderManager.addDirectory(path);
   m_shaderManager.addDirectory(std::string("GLSL_" PROJECT_NAME));
   m_shaderManager.addDirectory(path + std::string(PROJECT_RELDIRECTORY));
-
-  m_shaderManager.registerInclude("draw.frag.glsl");
-  m_shaderManager.registerInclude("nvmeshlet_utils.glsl");
-  m_shaderManager.registerInclude("config.h");
-  m_shaderManager.registerInclude("common.h");
 
   m_shaderManager.m_prepend = std::string("#define IS_VULKAN 1\n") + prepend;
 
