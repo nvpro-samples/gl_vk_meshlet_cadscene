@@ -9,23 +9,23 @@ Message(STATUS "Processing Project ${PROJNAME}:")
 SET(MODEL_DOWNLOAD_${PROJNAME} ON CACHE BOOL "CHECK to download the 3d models needed for this sample" )
 
 #####################################################################################
-# look for shared_sources 1) as a sub-folder 2) at some other locations
+# look for nvpro_core 1) as a sub-folder 2) at some other locations
 # this cannot be put anywhere else since we still didn't find setup.cmake yet
 #
 if(NOT BASE_DIRECTORY)
 
   find_path(BASE_DIRECTORY
-    NAMES shared_sources/cmake/setup.cmake
+    NAMES nvpro_core/cmake/setup.cmake
     PATHS ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../.. 
     REQUIRED
-    DOC "Directory containing shared_sources"
+    DOC "Directory containing nvpro_core"
     )
 endif()
-if(EXISTS ${BASE_DIRECTORY}/shared_sources/cmake/setup.cmake)
-  include(${BASE_DIRECTORY}/shared_sources/cmake/setup.cmake)
-  include(${BASE_DIRECTORY}/shared_sources/cmake/utilities.cmake)
+if(EXISTS ${BASE_DIRECTORY}/nvpro_core/cmake/setup.cmake)
+  include(${BASE_DIRECTORY}/nvpro_core/cmake/setup.cmake)
+  include(${BASE_DIRECTORY}/nvpro_core/cmake/utilities.cmake)
 else()
-  message(FATAL_ERROR "could not find base directory, please set BASE_DIRECTORY to folder containing shared_sources")
+  message(FATAL_ERROR "could not find base directory, please set BASE_DIRECTORY to folder containing nvpro_core")
 endif()
     
 _add_project_definitions(${PROJNAME})
@@ -59,9 +59,9 @@ endif()
 
 #####################################################################################
 # process the rest of some cmake code that needs to be done *after* the packages add
-_add_shared_sources_lib()
+_add_nvpro_core_lib()
 
-add_definitions(-DCSF_ZIP_SUPPORT=1)
+add_definitions(-DCSF_SUPPORT_ZLIB=1)
 
 #####################################################################################
 # download models
@@ -132,7 +132,7 @@ endif()
 # Linkage
 #
 
-target_link_libraries(${VK_EXENAME} ${PLATFORM_LIBRARIES} shared_sources)
+target_link_libraries(${VK_EXENAME} ${PLATFORM_LIBRARIES} nvpro_core)
 
 foreach(DEBUGLIB ${LIBRARIES_DEBUG})
   target_link_libraries(${VK_EXENAME} debug ${DEBUGLIB})
@@ -143,7 +143,7 @@ foreach(RELEASELIB ${LIBRARIES_OPTIMIZED})
 endforeach(RELEASELIB)
 
 if(NOT BUILD_${PROJNAME}_VULKAN_ONLY)
-  target_link_libraries(${GL_VK_EXENAME} ${PLATFORM_LIBRARIES} shared_sources)
+  target_link_libraries(${GL_VK_EXENAME} ${PLATFORM_LIBRARIES} nvpro_core)
 
   foreach(DEBUGLIB ${LIBRARIES_DEBUG})
     target_link_libraries(${GL_VK_EXENAME} debug ${DEBUGLIB})
