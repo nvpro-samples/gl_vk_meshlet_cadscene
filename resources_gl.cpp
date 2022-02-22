@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -99,41 +99,18 @@ bool ResourcesGL::initScene(const CadScene& cadscene)
   assert(sizeof(CadScene::MatrixNode) == m_alignedMatrixSize);
   assert(sizeof(CadScene::Material) == m_alignedMaterialSize);
 
-#if USE_PER_GEOMETRY_VIEWS
-  std::vector<CadSceneGL::GeometryUbo> geometryData(cadscene.m_geometry.size());
-  for(size_t i = 0; i < cadscene.m_geometry.size(); i++)
-  {
-    uint64_t*             geombindings = (uint64_t*)&geometryData[i];
-    CadSceneGL::Geometry& geom         = m_scene.m_geometry[i];
-
-    geombindings[GEOMETRY_SSBO_MESHLETDESC] = (geom.topoMeshlet.bufferADDR);
-    geombindings[GEOMETRY_SSBO_PRIM]        = (geom.topoPrim.bufferADDR);
-    geombindings[GEOMETRY_TEX_IBO]          = (geom.vertTEX.texADDR);
-    geombindings[GEOMETRY_TEX_VBO]          = (geom.vboTEX.texADDR);
-    geombindings[GEOMETRY_TEX_ABO]          = (geom.aboTEX.texADDR);
-  }
-#else
-  std::vector<CadSceneGL::GeometryUbo> geometryData(m_scene.m_geometryMem.getChunkCount() * 2);
+  std::vector<CadSceneGL::GeometryUbo> geometryData(m_scene.m_geometryMem.getChunkCount());
   for(size_t i = 0; i < m_scene.m_geometryMem.getChunkCount(); i++)
   {
-    uint64_t* geombindings32 = (uint64_t*)&geometryData[i * 2 + 0];
-    uint64_t* geombindings16 = (uint64_t*)&geometryData[i * 2 + 1];
+    uint64_t* geombindings = (uint64_t*)&geometryData[i];
 
     const GeometryMemoryGL::Chunk& chunk = m_scene.m_geometryMem.getChunk(i);
 
-    geombindings16[GEOMETRY_SSBO_MESHLETDESC] = (chunk.meshADDR);
-    geombindings16[GEOMETRY_SSBO_PRIM]        = (chunk.meshIndicesADDR);
-    geombindings16[GEOMETRY_TEX_IBO]          = (chunk.meshVertex16TEXADDR);
-    geombindings16[GEOMETRY_TEX_VBO]          = (chunk.vboTEXADDR);
-    geombindings16[GEOMETRY_TEX_ABO]          = (chunk.aboTEXADDR);
-
-    geombindings32[GEOMETRY_SSBO_MESHLETDESC] = (chunk.meshADDR);
-    geombindings32[GEOMETRY_SSBO_PRIM]        = (chunk.meshIndicesADDR);
-    geombindings32[GEOMETRY_TEX_IBO]          = (chunk.meshVertex32TEXADDR);
-    geombindings32[GEOMETRY_TEX_VBO]          = (chunk.vboTEXADDR);
-    geombindings32[GEOMETRY_TEX_ABO]          = (chunk.aboTEXADDR);
+    geombindings[GEOMETRY_SSBO_MESHLETDESC] = (chunk.meshADDR);
+    geombindings[GEOMETRY_SSBO_PRIM]        = (chunk.meshIndicesADDR);
+    geombindings[GEOMETRY_TEX_VBO]          = (chunk.vboTEXADDR);
+    geombindings[GEOMETRY_TEX_ABO]          = (chunk.aboTEXADDR);
   }
-#endif
 
   m_setup.geometryBindings.create(sizeof(CadSceneGL::GeometryUbo) * geometryData.size(), geometryData.data(), 0, 0);
 
@@ -162,11 +139,19 @@ bool ResourcesGL::initPrograms(const std::string& path, const std::string& prepe
   if(m_nativeMeshSupport)
   {
     m_programids.draw_object_mesh = m_progManager.createProgram(
-        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet_basic.mesh.glsl"),
         nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
     m_programids.draw_object_mesh_task = m_progManager.createProgram(
         nvgl::ProgramManager::Definition(GL_TASK_SHADER_NV, "drawmeshlet.task.glsl"),
-        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet_basic.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
+
+    m_programids.draw_object_cull_mesh = m_progManager.createProgram(
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet_cull.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
+    m_programids.draw_object_cull_mesh_task = m_progManager.createProgram(
+        nvgl::ProgramManager::Definition(GL_TASK_SHADER_NV, "drawmeshlet.task.glsl"),
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet_cull.mesh.glsl"),
         nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
   }
 
@@ -190,6 +175,9 @@ void ResourcesGL::updatedPrograms()
   {
     m_programs.draw_object_mesh      = m_progManager.get(m_programids.draw_object_mesh);
     m_programs.draw_object_mesh_task = m_progManager.get(m_programids.draw_object_mesh_task);
+
+    m_programs.draw_object_cull_mesh      = m_progManager.get(m_programids.draw_object_cull_mesh);
+    m_programs.draw_object_cull_mesh_task = m_progManager.get(m_programids.draw_object_cull_mesh_task);
   }
 }
 
@@ -200,12 +188,14 @@ void ResourcesGL::deinitPrograms()
   {
     m_progManager.destroyProgram(m_programids.draw_object_mesh);
     m_progManager.destroyProgram(m_programids.draw_object_mesh_task);
+    m_progManager.destroyProgram(m_programids.draw_object_cull_mesh);
+    m_progManager.destroyProgram(m_programids.draw_object_cull_mesh_task);
   }
 
   glUseProgram(0);
 }
 
-bool ResourcesGL::init(nvgl::ContextWindow* contextWindowGL, nvh::Profiler* profiler)
+bool ResourcesGL::init(const nvgl::ContextWindow* contextWindowGL, nvh::Profiler* profiler)
 {
   const GLubyte* renderer = glGetString(GL_RENDERER);
   LOGI("GL device: %s\n", renderer);
@@ -283,7 +273,6 @@ void ResourcesGL::drawBoundingBoxes(const class RenderList* NV_RESTRICT list) co
     int  lastGeometry = -1;
     int  lastMatrix   = -1;
     int  lastChunk    = -1;
-    bool lastShorts   = false;
 
     for(int i = 0; i < list->m_drawItems.size(); i++)
     {
@@ -294,29 +283,21 @@ void ResourcesGL::drawBoundingBoxes(const class RenderList* NV_RESTRICT list) co
         const CadSceneGL::Geometry& geogl = m_scene.m_geometry[di.geometryIndex];
         int                         chunk = int(geogl.mem.chunkIndex);
 
-#if USE_PER_GEOMETRY_VIEWS
-        glBindBufferRange(GL_UNIFORM_BUFFER, UBO_GEOMETRY, m_setup.geometryBindings.buffer,
-                          sizeof(CadSceneGL::GeometryUbo) * di.geometryIndex, sizeof(CadSceneGL::GeometryUbo));
-#else
-        if(chunk != lastChunk || di.shorts != lastShorts)
+        if(chunk != lastChunk)
         {
-          int idx = chunk * 2 + (di.shorts ? 1 : 0);
           glBindBufferRange(GL_UNIFORM_BUFFER, UBO_GEOMETRY, m_setup.geometryBindings.buffer,
-                            sizeof(CadSceneGL::GeometryUbo) * idx, sizeof(CadSceneGL::GeometryUbo));
+                            sizeof(CadSceneGL::GeometryUbo) * chunk, sizeof(CadSceneGL::GeometryUbo));
 
           lastChunk  = chunk;
-          lastShorts = di.shorts;
         }
 
         glUniform4ui(0, uint32_t(geogl.topoMeshlet.offset / sizeof(NVMeshlet::MeshletDesc)), 0, 0, 0);
-#endif
 
         lastGeometry = di.geometryIndex;
       }
 
       if(lastMatrix != di.matrixIndex)
       {
-
         glBindBufferRange(GL_UNIFORM_BUFFER, UBO_OBJECT, m_scene.m_buffers.matrices.buffer,
                           m_alignedMatrixSize * di.matrixIndex, sizeof(CadScene::MatrixNode));
 
@@ -342,8 +323,8 @@ void ResourcesGL::enableVertexFormat() const
   glEnableVertexAttribArray(VERTEX_NORMAL);
   for(uint32_t i = 0; i < m_extraAttributes; i++)
   {
-    glEnableVertexAttribArray(VERTEX_XTRA + i);
-    glVertexAttribBinding(VERTEX_XTRA + i, 1);
+    glEnableVertexAttribArray(VERTEX_EXTRAS + i);
+    glVertexAttribBinding(VERTEX_EXTRAS + i, 1);
   }
 
   if(m_fp16)
@@ -352,7 +333,7 @@ void ResourcesGL::enableVertexFormat() const
     glVertexAttribFormat(VERTEX_NORMAL, 3, GL_HALF_FLOAT, GL_FALSE, offsetof(CadScene::VertexAttributesFP16, normal));
     for(uint32_t i = 0; i < m_extraAttributes; i++)
     {
-      glVertexAttribFormat(VERTEX_XTRA + i, 4, GL_HALF_FLOAT, GL_FALSE,
+      glVertexAttribFormat(VERTEX_EXTRAS + i, 4, GL_HALF_FLOAT, GL_FALSE,
                            sizeof(CadScene::VertexAttributesFP16) + sizeof(half) * 4 * i);
     }
   }
@@ -362,7 +343,7 @@ void ResourcesGL::enableVertexFormat() const
     glVertexAttribFormat(VERTEX_NORMAL, 3, GL_FLOAT, GL_FALSE, offsetof(CadScene::VertexAttributes, normal));
     for(uint32_t i = 0; i < m_extraAttributes; i++)
     {
-      glVertexAttribFormat(VERTEX_XTRA + i, 4, GL_FLOAT, GL_FALSE, sizeof(CadScene::VertexAttributes) + sizeof(float) * 4 * i);
+      glVertexAttribFormat(VERTEX_EXTRAS + i, 4, GL_FLOAT, GL_FALSE, sizeof(CadScene::VertexAttributes) + sizeof(float) * 4 * i);
     }
   }
   glBindVertexBuffer(0, 0, 0, m_vertexSize);
@@ -376,8 +357,8 @@ void ResourcesGL::disableVertexFormat() const
   glDisableVertexAttribArray(VERTEX_NORMAL);
   for(uint32_t i = 0; i < m_extraAttributes; i++)
   {
-    glVertexAttribBinding(VERTEX_XTRA + i, i);
-    glDisableVertexAttribArray(VERTEX_XTRA + i);
+    glVertexAttribBinding(VERTEX_EXTRAS + i, i);
+    glDisableVertexAttribArray(VERTEX_EXTRAS + i);
   }
   glBindVertexBuffer(0, 0, 0, 16);
   glBindVertexBuffer(1, 0, 0, 16);

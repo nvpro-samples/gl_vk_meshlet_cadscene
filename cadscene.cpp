@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -23,7 +23,6 @@
 #include <fileformats/cadscenefile.h>
 
 #include "config.h"
-#include "nvmeshlet_array.hpp"
 #include "nvmeshlet_packbasic.hpp"
 #include <nvh/geometry.hpp>
 #include <nvh/misc.hpp>
@@ -192,7 +191,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
     if(m_cfg.fp16)
     {
-      for(uint32_t i = 0; i < csfgeom->numVertices; i++)
+      for(uint32_t i = 0; i < uint32_t(csfgeom->numVertices); i++)
       {
         VertexFP16*           vertex    = (VertexFP16*)getVertex(geom.vboData, i);
         VertexAttributesFP16* attribute = (VertexAttributesFP16*)getVertexAttribute(geom.aboData, i);
@@ -221,7 +220,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     }
     else
     {
-      for(uint32_t i = 0; i < csfgeom->numVertices; i++)
+      for(uint32_t i = 0; i < uint32_t(csfgeom->numVertices); i++)
       {
         Vertex*           vertex    = (Vertex*)getVertex(geom.vboData, i);
         VertexAttributes* attribute = (VertexAttributes*)getVertexAttribute(geom.aboData, i);
@@ -257,7 +256,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
       geom.iboSize = sizeof(uint16_t) * csfgeom->numIndexSolid;
 
       uint16_t* indices = (uint16_t*)malloc(geom.iboSize);
-      for(uint32_t i = 0; i < csfgeom->numIndexSolid; i++)
+      for(uint32_t i = 0; i < uint32_t(csfgeom->numIndexSolid); i++)
       {
         indices[i] = csfgeom->indexSolid[i];
       }
@@ -279,12 +278,12 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
     uint32_t accumSolid  = 0;
     size_t   offsetSolid = 0;
-    for(uint32_t p = 0; p < csfgeom->numParts; p++)
+    for(uint32_t p = 0; p < uint32_t(csfgeom->numParts); p++)
     {
       geom.parts[p].indexSolid.count  = csfgeom->parts[p].numIndexSolid;
       geom.parts[p].indexSolid.offset = offsetSolid;
 
-      for(uint32_t i = 0; i < csfgeom->parts[p].numIndexSolid; i++)
+      for(uint32_t i = 0; i < uint32_t(csfgeom->parts[p].numIndexSolid); i++)
       {
         uint32_t v = csfgeom->indexSolid[i + accumSolid];
 
@@ -373,7 +372,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     object.faceCCW = nvmath::det(m_matrices[object.matrixIndex].worldMatrix) > 0;
 
     object.parts.resize(csfnode->numParts);
-    for(uint32_t i = 0; i < csfnode->numParts; i++)
+    for(uint32_t i = 0; i < uint32_t(csfnode->numParts); i++)
     {
       object.parts[i].active        = csfnode->parts[i].active ? 1 : 0;
       object.parts[i].matrixIndex   = n;
@@ -575,29 +574,11 @@ size_t fillIndexBuffer(int useShorts, const std::vector<unsigned int>& vertexind
   return vidxSize;
 }
 
-void fillMeshletTopology(NVMeshlet::ArrayBuilder<uint32_t>::MeshletGeometry& geometry, CadScene::MeshletTopology& topo, int useShorts)
-{
-  if(geometry.meshletDescriptors.empty())
-    return;
-
-  topo.vertSize = fillIndexBuffer(useShorts, geometry.vertexIndices, topo.vertData);
-
-  topo.descSize = sizeof(NVMeshlet::MeshletArrayDesc) * geometry.meshletDescriptors.size();
-  topo.primSize = sizeof(NVMeshlet::PrimitiveIndexType) * geometry.primitiveIndices.size();
-
-  topo.descData = malloc(topo.descSize);
-  topo.primData = malloc(topo.primSize);
-
-  memcpy(topo.descData, geometry.meshletDescriptors.data(), topo.descSize);
-  memcpy(topo.primData, geometry.primitiveIndices.data(), topo.primSize);
-}
-
 void fillMeshletTopology(NVMeshlet::PackBasicBuilder::MeshletGeometry& geometry, CadScene::MeshletTopology& topo, int useShorts)
 {
   if(geometry.meshletDescriptors.empty())
     return;
 
-  topo.vertSize = NVMESHLET_PACK_ALIGNMENT;
   topo.descSize = sizeof(NVMeshlet::MeshletPackBasicDesc) * geometry.meshletDescriptors.size();
   topo.primSize = sizeof(NVMeshlet::PackBasicType) * geometry.meshletPacks.size();
 
@@ -678,82 +659,9 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
       fillMeshletTopology(meshletGeometry, geom.meshlet, geom.useShorts);
 
       geom.meshSize        = geom.meshlet.descSize;
-      geom.meshIndicesSize = geom.meshlet.primSize + geom.meshlet.vertSize;
+      geom.meshIndicesSize = geom.meshlet.primSize;
 
-      size_t meshActualSize = geom.meshlet.descSize + geom.meshlet.primSize + geom.meshlet.vertSize;
-
-#pragma omp critical
-      {
-        m_meshSize += geom.meshSize + geom.meshIndicesSize;
-        groups += numMeshlets;
-        meshActualSizeTotal += meshActualSize;
-      }
-    }
-  }
-  else
-  {
-    NVMeshlet::ArrayBuilder<uint32_t> meshletBuilder;
-    meshletBuilder.setup(m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount, false);
-
-
-#pragma omp parallel for
-    for(int g = 0; g < csf->numGeometries; g++)
-    {
-      const CSFGeometry*    csfgeom = csf->geometries + g;
-      Geometry&             geom    = m_geometry[g];
-
-      NVMeshlet::ArrayBuilder<uint32_t>::MeshletGeometry meshletGeometry;
-
-      uint32_t               numMeshlets = 0;
-      uint32_t               indexOffset = 0;
-      const unsigned int*    indices     = csfgeom->indexSolid;
-      const CSFGeometryPart* parts       = csfgeom->parts;
-      for(size_t p = 0; p < geom.parts.size(); p++)
-      {
-        uint32_t numIndex              = parts[p].numIndexSolid;
-        geom.parts[p].meshSolid.offset = numMeshlets;
-
-        uint32_t processedIndices = meshletBuilder.buildMeshlets(meshletGeometry, numIndex, indices + indexOffset);
-        if(processedIndices != numIndex)
-        {
-          LOGE("warning: geometry meshlet incomplete %d\n", g);
-        }
-
-        geom.parts[p].meshSolid.count = (uint32_t)meshletGeometry.meshletDescriptors.size() - numMeshlets;
-        numMeshlets                   = (uint32_t)meshletGeometry.meshletDescriptors.size();
-        indexOffset += numIndex;
-      }
-
-      geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
-
-      meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
-                                              csfgeom->vertex, sizeof(float) * 3);
-      if(m_cfg.verbose)
-      {
-#if MESHLET_ERRORCHECK
-        NVMeshlet::StatusCode errorcode = meshletBuilder.errorCheck(meshletGeometry, 0, csfgeom->numVertices - 1,
-                                                                    csfgeom->numIndexSolid, csfgeom->indexSolid);
-        if(errorcode)
-        {
-          LOGE("geometry %d: meshlet error %d\n", g, errorcode);
-        }
-#endif
-
-        NVMeshlet::Stats statsLocal;
-        meshletBuilder.appendStats(meshletGeometry, statsLocal);
-
-#pragma omp critical
-        {
-          statsGlobal.append(statsLocal);
-        }
-      }
-
-      fillMeshletTopology(meshletGeometry, geom.meshlet, geom.useShorts);
-
-      geom.meshSize        = geom.meshlet.descSize;
-      geom.meshIndicesSize = NVMeshlet::arrayIndicesAlignedSize(geom.meshlet.primSize) + geom.meshlet.vertSize;
-
-      size_t meshActualSize = geom.meshlet.descSize + geom.meshlet.primSize + geom.meshlet.vertSize;
+      size_t meshActualSize = geom.meshlet.descSize + geom.meshlet.primSize;
 
 #pragma omp critical
       {

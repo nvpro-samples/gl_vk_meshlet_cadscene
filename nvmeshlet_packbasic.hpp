@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -187,7 +187,7 @@ struct MeshletPackBasic
   // variable size
   //
   // aligned to PACKBASIC_ALIGN bytes
-  // - first squence is either 16 or 32 bit indices per vertex
+  // - first sequence is either 16 or 32 bit indices per vertex
   //   (vertexPack is 2 or 1) respectively
   // - second sequence aligned to 8 bytes, primitive many 8 bit values
   //   
@@ -387,12 +387,6 @@ public:
   {
     if(geometry.meshletDescriptors.empty())
       return;
-
-    // ensure we never have out-of-bounds memory access to array within task shader
-    for(uint32_t i = 0; i < MESHLETS_PER_TASK - 1; i++)
-    {
-      geometry.meshletDescriptors.push_back(MeshletPackBasicDesc());
-    }
   }
 
   //////////////////////////////////////////////////////////////////////////

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -37,17 +37,24 @@ public:
   struct ProgramIDs
   {
     nvgl::ProgramID draw_object_tris;
+    nvgl::ProgramID draw_bboxes;
+
     nvgl::ProgramID draw_object_mesh;
     nvgl::ProgramID draw_object_mesh_task;
-    nvgl::ProgramID draw_bboxes;
+    nvgl::ProgramID draw_object_cull_mesh;
+    nvgl::ProgramID draw_object_cull_mesh_task;
+
   };
 
   struct Programs
   {
-    GLuint draw_object_tris      = 0;
-    GLuint draw_object_mesh      = 0;
-    GLuint draw_object_mesh_task = 0;
-    GLuint draw_bboxes           = 0;
+    GLuint draw_object_tris = 0;
+    GLuint draw_bboxes      = 0;
+
+    GLuint draw_object_mesh           = 0;
+    GLuint draw_object_mesh_task      = 0;
+    GLuint draw_object_cull_mesh      = 0;
+    GLuint draw_object_cull_mesh_task = 0;
   };
 
   struct FrameBuffer
@@ -87,7 +94,7 @@ public:
 
   void synchronize() override { glFinish(); }
 
-  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler) override;
+  bool init(const nvgl::ContextWindow* window, nvh::Profiler* profiler) override;
   void deinit() override;
 
   bool initPrograms(const std::string& path, const std::string& prepend) override;

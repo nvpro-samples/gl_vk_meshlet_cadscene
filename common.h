@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -25,9 +25,20 @@
 
 /////////////////////////////////////////////////
 
+// Input Mesh Vertex related
+
 #define VERTEX_POS      0
 #define VERTEX_NORMAL   1
-#define VERTEX_XTRA     2  // must be NORMAL+1
+#define VERTEX_EXTRAS   2  // must be NORMAL+1
+
+#ifndef VERTEX_EXTRAS_COUNT
+// add how many extra fake attributes (vec4) you want to use
+#define VERTEX_EXTRAS_COUNT   4
+#endif
+
+#define VERTEX_NORMAL_STRIDE (1 + VERTEX_EXTRAS_COUNT)
+
+/////////////////////////////////////////////////
 
 // GL
 #define UBO_SCENE_VIEW    0
@@ -47,9 +58,8 @@
 // geometryBuffer ubo
 #define GEOMETRY_SSBO_MESHLETDESC   0
 #define GEOMETRY_SSBO_PRIM          1
-#define GEOMETRY_TEX_IBO            2
-#define GEOMETRY_TEX_VBO            3
-#define GEOMETRY_TEX_ABO            4
+#define GEOMETRY_TEX_VBO            2
+#define GEOMETRY_TEX_ABO            3
 #define GEOMETRY_BINDINGS           5
 
 ////////////////////////////////////////////////////
@@ -60,12 +70,24 @@
 // 64 & 126 is the preferred size
 #define NVMESHLET_VERTEX_COUNT      64
 #define NVMESHLET_PRIMITIVE_COUNT   126
+// must be multiple of SUBGROUP_SIZE
+#define NVMESHLET_PER_TASK          32
 #endif
 
-#ifndef EXTRA_ATTRIBUTES
-// add how many extra fake attributes (vec4) you want to use
-#define EXTRA_ATTRIBUTES    4
+#ifndef NVMESHLET_ENCODING
+#define NVMESHLET_ENCODING  NVMESHLET_ENCODING_PACKBASIC
 #endif
+
+#ifndef MESH_SUBGROUP_SIZE
+#define MESH_SUBGROUP_SIZE  32
+#endif
+
+#ifndef TASK_SUBGROUP_SIZE
+#define TASK_SUBGROUP_SIZE  32
+#endif
+
+/////////////////////////////////////////////////
+
 
 #ifndef USE_CLIPPING
 #define USE_CLIPPING        0
@@ -73,7 +95,9 @@
 
 #define NUM_CLIPPING_PLANES 3
 
-#define NORMAL_STRIDE (1 + EXTRA_ATTRIBUTES)
+
+/////////////////////////////////////////////////
+
 
 #ifdef __cplusplus
 namespace meshlettest

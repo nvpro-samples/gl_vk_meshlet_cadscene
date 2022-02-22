@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -49,21 +49,12 @@ namespace NVMeshlet {
 static const int MAX_VERTEX_COUNT_LIMIT    = 256;
 static const int MAX_PRIMITIVE_COUNT_LIMIT = 256;
 
-static const uint32_t MESHLETS_PER_TASK = 32;
-
-
 // must not change
 typedef uint8_t PrimitiveIndexType;  // must store [0,MAX_VERTEX_COUNT_LIMIT-1]
-
-inline uint32_t computeTasksCount(uint32_t numMeshlets)
-{
-  return (numMeshlets + MESHLETS_PER_TASK - 1) / MESHLETS_PER_TASK;
-}
 
 inline uint32_t alignedSize(uint32_t v, uint32_t align) {
   return (v + align - 1) & (~(align-1));
 }
-
 
 // opaque type, all builders will specialize this, but fit within
 struct MeshletDesc

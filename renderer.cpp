@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -32,7 +32,6 @@
 
 
 namespace meshlettest {
-bool     Resources::s_vkMeshSupport     = false;
 uint32_t Resources::s_vkDevice          = 0;
 uint32_t Resources::s_glDevice          = 0;
 
@@ -45,7 +44,7 @@ static void AddItem(std::vector<RenderList::DrawItem>& drawItems, const RenderLi
   {
     passes = !passes;
   }
-  di.task = config.minTaskMeshlets > 0 && di.meshlet.count >= config.minTaskMeshlets;
+  di.task = config.taskMinMeshlets > 0 && di.meshlet.count >= config.taskMinMeshlets;
   if(di.range.count && passes)
   {
     drawItems.push_back(di);
@@ -143,7 +142,7 @@ void RenderList::setup(const CadScene* NV_RESTRICT scene, const Config& config)
     const DrawItem& di = m_drawItems[i];
     sumTriangles += di.range.count / 3;
     sumTrianglesShort += (di.range.count / 3) * (di.shorts ? 1 : 0);
-    m_stats.tasksInput += di.task ? (di.meshlet.count + 31) / 32 : 0;
+    m_stats.tasksInput += di.task ? ((di.meshlet.count + config.taskNumMeshlets - 1) / config.taskNumMeshlets) : 0;
     m_stats.meshletsInput += di.meshlet.count;
     m_stats.trisInput += di.range.count / 3;
   }

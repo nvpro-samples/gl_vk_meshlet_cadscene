@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -25,10 +25,6 @@
 #include "resources_vk.hpp"
 
 #include <algorithm>
-
-#if HAS_OPENGL
-#include <nvgl/extensions_gl.hpp>
-#endif
 #include <nvh/nvprint.hpp>
 
 #include "nvmeshlet_builder.hpp"
@@ -36,9 +32,6 @@
 extern bool vulkanInitLibrary();
 
 namespace meshlettest {
-
-extern void setupVulkanContextInfo(nvvk::ContextCreateInfo& info);
-
 
 bool ResourcesVK::isAvailable()
 {
@@ -51,7 +44,7 @@ bool ResourcesVK::isAvailable()
   }
 
   s_init = true;
-  result = vulkanInitLibrary();
+  result = true;
 
   return result;
 }
@@ -63,11 +56,7 @@ void ResourcesVK::submissionExecute(VkFence fence, bool useImageReadWait, bool u
 {
   if(useImageReadWait && m_submissionWaitForRead)
   {
-#if HAS_OPENGL
-    VkSemaphore semRead = m_semImageRead;
-#else
     VkSemaphore semRead    = m_swapChain->getActiveReadSemaphore();
-#endif
     if(semRead)
     {
       m_submission.enqueueWait(semRead, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
@@ -77,11 +66,7 @@ void ResourcesVK::submissionExecute(VkFence fence, bool useImageReadWait, bool u
 
   if(useImageWriteSignals)
   {
-#if HAS_OPENGL
-    VkSemaphore semWritten = m_semImageWritten;
-#else
     VkSemaphore semWritten = m_swapChain->getActiveWrittenSemaphore();
-#endif
     if(semWritten)
     {
       m_submission.enqueueSignal(semWritten);
@@ -105,19 +90,6 @@ void ResourcesVK::endFrame()
   submissionExecute(m_ringFences.getFence(), true, true);
   assert(m_withinFrame);
   m_withinFrame = false;
-#if HAS_OPENGL
-  {
-    // blit to gl backbuffer
-    glDisable(GL_DEPTH_TEST);
-    glViewport(0, 0, m_framebuffer.renderWidth / m_framebuffer.supersample, m_framebuffer.renderHeight / m_framebuffer.supersample);
-    glWaitVkSemaphoreNV((GLuint64)m_semImageWritten);
-    glDrawVkImageNV((GLuint64)(VkImage)(m_framebuffer.useResolved ? m_framebuffer.imgColorResolved : m_framebuffer.imgColor),
-                    0, 0, 0, m_framebuffer.renderWidth / m_framebuffer.supersample,
-                    m_framebuffer.renderHeight / m_framebuffer.supersample, 0, 0, 1, 1, 0);
-    glEnable(GL_DEPTH_TEST);
-    glSignalVkSemaphoreNV((GLuint64)m_semImageRead);
-  }
-#endif
 }
 
 void ResourcesVK::blitFrame(const FrameConfig& global)
@@ -194,8 +166,6 @@ void ResourcesVK::blitFrame(const FrameConfig& global)
     }
   }
 
-
-#if !HAS_OPENGL
   {
     // blit to vk backbuffer
     VkImageBlit region               = {0};
@@ -219,7 +189,6 @@ void ResourcesVK::blitFrame(const FrameConfig& global)
     cmdImageTransition(cmd, m_swapChain->getActiveImage(), VK_IMAGE_ASPECT_COLOR_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
   }
-#endif
 
   if(m_framebuffer.useResolved)
   {
@@ -249,45 +218,13 @@ void ResourcesVK::getStats(CullStats& stats)
   m_memAllocator.unmap(m_common.statsReadAID);
 }
 
-#if HAS_OPENGL
-bool ResourcesVK::init(nvgl::ContextWindow* contextWindow, nvh::Profiler* profiler)
-#else
-bool ResourcesVK::init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::Profiler* profiler)
-#endif
+bool ResourcesVK::init(const nvvk::Context* context, const nvvk::SwapChain* swapChain, nvh::Profiler* profiler)
 {
   m_fboChangeID  = 0;
   m_pipeChangeID = 0;
 
-#if HAS_OPENGL
-  {
-    nvvk::ContextCreateInfo info;
-    info.compatibleDeviceIndex = Resources::s_vkDevice;
-    setupVulkanContextInfo(info);
-    m_context = &m_contextInstance;
-    if(!m_context->init(info))
-    {
-      LOGI("vulkan device create failed (use debug build for more information)\n");
-      exit(-1);
-      return false;
-    }
-  }
-
-  {
-    // OpenGL drawing
-    VkSemaphoreCreateInfo semCreateInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    vkCreateSemaphore(m_context->m_device, &semCreateInfo, nullptr, &m_semImageRead);
-    vkCreateSemaphore(m_context->m_device, &semCreateInfo, nullptr, &m_semImageWritten);
-
-    // fire read to ensure queuesubmit never waits
-    glSignalVkSemaphoreNV((GLuint64)m_semImageRead);
-    glFlush();
-  }
-#else
-  {
-    m_context = context;
-    m_swapChain = swapChain;
-  }
-#endif
+  m_context     = context;
+  m_swapChain   = swapChain;
 
   m_device      = m_context->m_device;
   m_physical    = m_context->m_physicalDevice;
@@ -339,107 +276,7 @@ bool ResourcesVK::init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::
   }
 
   {
-
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    {
-      // REGULAR
-      DrawSetup& setup = m_setupRegular;
-      setup.container.init(m_device);
-
-      auto& bindingsScene = setup.container.at(DSET_SCENE);
-      // UBO SCENE
-      bindingsScene.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-      bindingsScene.initLayout();
-      // UBO OBJECT
-      auto& bindingsObject = setup.container.at(DSET_OBJECT);
-      bindingsObject.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
-                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-      bindingsObject.initLayout();
-
-      setup.container.initPipeLayout(0, 2, uint32_t(0));
-    }
-
-    {
-      // BBOX
-      DrawSetup& setup = m_setupBbox;
-      setup.container.init(m_device);
-      // UBO SCENE
-      auto& bindingsScene = setup.container.at(DSET_SCENE);
-      bindingsScene.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0);
-      bindingsScene.initLayout();
-      // UBO OBJECT
-      auto& bindingsObject = setup.container.at(DSET_OBJECT);
-      bindingsObject.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
-                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0);
-      bindingsObject.initLayout();
-      // UBO GEOMETRY
-      auto& bindingsGeometry = setup.container.at(DSET_GEOMETRY);
-      bindingsGeometry.addBinding(GEOMETRY_SSBO_MESHLETDESC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
-      bindingsGeometry.addBinding(GEOMETRY_SSBO_PRIM, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
-      bindingsGeometry.addBinding(GEOMETRY_TEX_IBO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
-      bindingsGeometry.addBinding(GEOMETRY_TEX_VBO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
-      bindingsGeometry.addBinding(GEOMETRY_TEX_ABO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
-
-      bindingsGeometry.initLayout();
-
-#if USE_PER_GEOMETRY_VIEWS
-      setup.container.initPipeLayout(0, 3);
-#else
-      VkPushConstantRange range;
-      range.offset = 0;
-      range.size = sizeof(uint32_t) * 4;
-      range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-      setup.container.initPipeLayout(0, 3, 1, &range);
-#endif
-    }
-
-    if(m_nativeMeshSupport)
-    {
-      VkPipelineStageFlags stageMesh = VK_SHADER_STAGE_MESH_BIT_NV;
-      VkPipelineStageFlags stageTask = VK_SHADER_STAGE_TASK_BIT_NV;
-
-      {
-        // TASK
-        DrawSetup& setup = m_setupMeshTask;
-        setup.container.init(m_device);
-        // UBO SCENE
-        auto& bindingsScene = setup.container.at(DSET_SCENE);
-        bindingsScene.addBinding(SCENE_UBO_VIEW, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
-                                 stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-        bindingsScene.addBinding(SCENE_SSBO_STATS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageTask | stageMesh, 0);
-        bindingsScene.initLayout();
-        // UBO OBJECT
-        auto& bindingsObject = setup.container.at(DSET_OBJECT);
-        bindingsObject.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
-                                  stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-        bindingsObject.initLayout();
-        // UBO GEOMETRY
-        auto& bindingsGeometry = setup.container.at(DSET_GEOMETRY);
-        bindingsGeometry.addBinding(GEOMETRY_SSBO_MESHLETDESC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageTask | stageMesh, 0);
-        bindingsGeometry.addBinding(GEOMETRY_SSBO_PRIM, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageMesh, 0);
-        bindingsGeometry.addBinding(GEOMETRY_TEX_IBO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, stageMesh, 0);
-        bindingsGeometry.addBinding(GEOMETRY_TEX_VBO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, stageMesh, 0);
-        bindingsGeometry.addBinding(GEOMETRY_TEX_ABO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, stageMesh, 0);
-        bindingsGeometry.initLayout();
-
-        VkPushConstantRange ranges[2];
-#if USE_PER_GEOMETRY_VIEWS
-        ranges[0].offset     = (USE_PER_GEOMETRY_VIEWS ? 0 : sizeof(uint32_t) * 4);
-        ranges[0].size       = sizeof(uint32_t) * 4;
-        ranges[0].stageFlags = VK_SHADER_STAGE_TASK_BIT_NV;
-#else
-        ranges[0].offset = 0;
-        ranges[0].size = sizeof(uint32_t) * 8;
-        ranges[0].stageFlags = VK_SHADER_STAGE_TASK_BIT_NV;
-        ranges[1].offset = 0;
-        ranges[1].size = sizeof(uint32_t) * 4;
-        ranges[1].stageFlags = VK_SHADER_STAGE_MESH_BIT_NV;
-#endif
-        setup.container.initPipeLayout(0, 3, USE_PER_GEOMETRY_VIEWS ? 1 : 2, ranges);
-      }
-    }
+    initPipeLayouts();
   }
 
   {
@@ -450,6 +287,98 @@ bool ResourcesVK::init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::
   return true;
 }
 
+void ResourcesVK::initPipeLayouts()
+{
+  ///////////////////////////////////////////////////////////////////////////////////////////
+  {
+    // REGULAR
+    DrawSetup& setup = m_setupRegular;
+    setup.container.init(m_device);
+
+    auto& bindingsScene = setup.container.at(DSET_SCENE);
+    // UBO SCENE
+    bindingsScene.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+    bindingsScene.initLayout();
+    // UBO OBJECT
+    auto& bindingsObject = setup.container.at(DSET_OBJECT);
+    bindingsObject.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+    bindingsObject.initLayout();
+
+    setup.container.initPipeLayout(0, 2, uint32_t(0));
+  }
+
+  {
+    // BBOX
+    DrawSetup& setup = m_setupBbox;
+    setup.container.init(m_device);
+    // UBO SCENE
+    auto& bindingsScene = setup.container.at(DSET_SCENE);
+    bindingsScene.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0);
+    bindingsScene.initLayout();
+    // UBO OBJECT
+    auto& bindingsObject = setup.container.at(DSET_OBJECT);
+    bindingsObject.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0);
+    bindingsObject.initLayout();
+    // UBO GEOMETRY
+    auto& bindingsGeometry = setup.container.at(DSET_GEOMETRY);
+    bindingsGeometry.addBinding(GEOMETRY_SSBO_MESHLETDESC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
+    bindingsGeometry.addBinding(GEOMETRY_SSBO_PRIM, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
+    bindingsGeometry.addBinding(GEOMETRY_TEX_VBO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
+    bindingsGeometry.addBinding(GEOMETRY_TEX_ABO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, 0);
+
+    bindingsGeometry.initLayout();
+
+    VkPushConstantRange range;
+    range.offset     = 0;
+    range.size       = sizeof(uint32_t) * 4;
+    range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    setup.container.initPipeLayout(0, 3, 1, &range);
+  }
+
+  if(m_nativeMeshSupport)
+  {
+    VkPipelineStageFlags stageMesh = VK_SHADER_STAGE_MESH_BIT_NV;
+    VkPipelineStageFlags stageTask = VK_SHADER_STAGE_TASK_BIT_NV;
+
+    {
+      // TASK
+      DrawSetup& setup = m_setupMeshTask;
+      setup.container.init(m_device);
+      // UBO SCENE
+      auto& bindingsScene = setup.container.at(DSET_SCENE);
+      bindingsScene.addBinding(SCENE_UBO_VIEW, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                               stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+      bindingsScene.addBinding(SCENE_SSBO_STATS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageTask | stageMesh, 0);
+      bindingsScene.initLayout();
+      // UBO OBJECT
+      auto& bindingsObject = setup.container.at(DSET_OBJECT);
+      bindingsObject.addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
+                                stageTask | stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+      bindingsObject.initLayout();
+      // UBO GEOMETRY
+      auto& bindingsGeometry = setup.container.at(DSET_GEOMETRY);
+      bindingsGeometry.addBinding(GEOMETRY_SSBO_MESHLETDESC, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageTask | stageMesh, 0);
+      bindingsGeometry.addBinding(GEOMETRY_SSBO_PRIM, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stageMesh, 0);
+      bindingsGeometry.addBinding(GEOMETRY_TEX_VBO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1,
+                                  stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+      bindingsGeometry.addBinding(GEOMETRY_TEX_ABO, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1,
+                                  stageMesh | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+      bindingsGeometry.initLayout();
+
+      VkPushConstantRange ranges[2];
+      ranges[0].offset = 0;
+      ranges[0].size = sizeof(uint32_t) * 8;
+      ranges[0].stageFlags = VK_SHADER_STAGE_TASK_BIT_NV;
+      ranges[1].offset = 0;
+      ranges[1].size = sizeof(uint32_t) * 4;
+      ranges[1].stageFlags = VK_SHADER_STAGE_MESH_BIT_NV;
+      setup.container.initPipeLayout(0, 3, 2, ranges);
+    }
+  }
+}
+
 void ResourcesVK::deinit()
 {
   synchronize();
@@ -457,11 +386,11 @@ void ResourcesVK::deinit()
   ImGui::ShutdownVK();
 
   {
-    vkDestroyBuffer(m_device, m_common.viewBuffer, NULL);
+    vkDestroyBuffer(m_device, m_common.viewBuffer, nullptr);
     m_memAllocator.free(m_common.viewAID);
-    vkDestroyBuffer(m_device, m_common.statsBuffer, NULL);
+    vkDestroyBuffer(m_device, m_common.statsBuffer, nullptr);
     m_memAllocator.free(m_common.statsAID);
-    vkDestroyBuffer(m_device, m_common.statsReadBuffer, NULL);
+    vkDestroyBuffer(m_device, m_common.statsReadBuffer, nullptr);
     m_memAllocator.free(m_common.statsReadAID);
   }
 
@@ -476,9 +405,9 @@ void ResourcesVK::deinit()
 
   m_profilerVK.deinit();
 
-  vkDestroyRenderPass(m_device, m_framebuffer.passClear, NULL);
-  vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, NULL);
-  vkDestroyRenderPass(m_device, m_framebuffer.passUI, NULL);
+  vkDestroyRenderPass(m_device, m_framebuffer.passClear, nullptr);
+  vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, nullptr);
+  vkDestroyRenderPass(m_device, m_framebuffer.passUI, nullptr);
 
   m_setupRegular.container.deinitLayouts();
   m_setupBbox.container.deinitLayouts();
@@ -489,14 +418,6 @@ void ResourcesVK::deinit()
   }
 
   m_memAllocator.deinit();
-
-#if HAS_OPENGL
-  vkDestroySemaphore(m_device, m_semImageRead, NULL);
-  vkDestroySemaphore(m_device, m_semImageWritten, NULL);
-  m_device = NULL;
-
-  m_context->deinit();
-#endif
 }
 
 bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepend)
@@ -524,12 +445,18 @@ bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepe
 
   if(m_nativeMeshSupport)
   {
-    m_shaders.object_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, "drawmeshlet.mesh.glsl",
+    m_shaders.object_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, "drawmeshlet_basic.mesh.glsl",
                                                                "#define USE_TASK_STAGE 0\n");
-    m_shaders.object_task_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, "drawmeshlet.mesh.glsl",
+    m_shaders.object_task_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, "drawmeshlet_basic.mesh.glsl",
                                                                     "#define USE_TASK_STAGE 1\n");
-    m_shaders.object_task = m_shaderManager.createShaderModule(VK_SHADER_STAGE_TASK_BIT_NV, "drawmeshlet.task.glsl",
-                                                               "#define USE_TASK_STAGE 1\n");
+    m_shaders.object_cull_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, "drawmeshlet_cull.mesh.glsl",
+                                                                    "#define USE_TASK_STAGE 0\n");
+    m_shaders.object_cull_task_mesh =
+        m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, "drawmeshlet_cull.mesh.glsl", "#define USE_TASK_STAGE 1\n");
+    m_shaders.object_task =
+        m_shaderManager.createShaderModule(VK_SHADER_STAGE_TASK_BIT_NV, "drawmeshlet.task.glsl", "#define USE_TASK_STAGE 1\n");
+
+    m_shaders.object_mesh_fragment = m_shaderManager.createShaderModule(VK_SHADER_STAGE_FRAGMENT_BIT, "drawmeshlet.frag.glsl");
   }
   ///////////////////////////////////////////////////////////////////////////////////////////
 
@@ -620,7 +547,7 @@ VkRenderPass ResourcesVK::createPass(bool clear, int msaa)
   rpInfo.dependencyCount             = 0;
 
   VkRenderPass rp;
-  result = vkCreateRenderPass(m_device, &rpInfo, NULL, &rp);
+  result = vkCreateRenderPass(m_device, &rpInfo, nullptr, &rp);
   assert(result == VK_SUCCESS);
   return rp;
 }
@@ -660,7 +587,7 @@ VkRenderPass ResourcesVK::createPassUI(int msaa)
   rpInfo.dependencyCount             = 0;
 
   VkRenderPass rp;
-  VkResult     result = vkCreateRenderPass(m_device, &rpInfo, NULL, &rp);
+  VkResult     result = vkCreateRenderPass(m_device, &rpInfo, nullptr, &rp);
   assert(result == VK_SUCCESS);
   return rp;
 }
@@ -694,9 +621,9 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
 
   if(oldMsaa != m_framebuffer.msaa || oldResolved != m_framebuffer.useResolved)
   {
-    vkDestroyRenderPass(m_device, m_framebuffer.passClear, NULL);
-    vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, NULL);
-    vkDestroyRenderPass(m_device, m_framebuffer.passUI, NULL);
+    vkDestroyRenderPass(m_device, m_framebuffer.passClear, nullptr);
+    vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, nullptr);
+    vkDestroyRenderPass(m_device, m_framebuffer.passUI, nullptr);
 
     // recreate the render passes with new msaa setting
     m_framebuffer.passClear    = createPass(true, m_framebuffer.msaa);
@@ -790,13 +717,13 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   cbImageViewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
 
   cbImageViewInfo.image = m_framebuffer.imgColor;
-  result                = vkCreateImageView(m_device, &cbImageViewInfo, NULL, &m_framebuffer.viewColor);
+  result                = vkCreateImageView(m_device, &cbImageViewInfo, nullptr, &m_framebuffer.viewColor);
   assert(result == VK_SUCCESS);
 
   if(m_framebuffer.useResolved)
   {
     cbImageViewInfo.image = m_framebuffer.imgColorResolved;
-    result                = vkCreateImageView(m_device, &cbImageViewInfo, NULL, &m_framebuffer.viewColorResolved);
+    result                = vkCreateImageView(m_device, &cbImageViewInfo, nullptr, &m_framebuffer.viewColorResolved);
     assert(result == VK_SUCCESS);
   }
 
@@ -815,15 +742,13 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   dsImageViewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_STENCIL_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
 
   dsImageViewInfo.image = m_framebuffer.imgDepthStencil;
-  result                = vkCreateImageView(m_device, &dsImageViewInfo, NULL, &m_framebuffer.viewDepthStencil);
+  result                = vkCreateImageView(m_device, &dsImageViewInfo, nullptr, &m_framebuffer.viewDepthStencil);
   assert(result == VK_SUCCESS);
   // initial resource transitions
   {
     VkCommandBuffer cmd = createTempCmdBuffer();
 
-#if !HAS_OPENGL
     m_swapChain->cmdUpdateBarriers(cmd);
-#endif
 
     cmdImageTransition(cmd, m_framebuffer.imgColor, VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_ACCESS_TRANSFER_READ_BIT,
                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -861,7 +786,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
     fbInfo.layers                  = 1;
 
     fbInfo.renderPass = m_framebuffer.passClear;
-    result            = vkCreateFramebuffer(m_device, &fbInfo, NULL, &fb);
+    result            = vkCreateFramebuffer(m_device, &fbInfo, nullptr, &fb);
     assert(result == VK_SUCCESS);
     m_framebuffer.fboScene = fb;
   }
@@ -884,7 +809,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
     fbInfo.layers                  = 1;
 
     fbInfo.renderPass = m_framebuffer.passUI;
-    result            = vkCreateFramebuffer(m_device, &fbInfo, NULL, &fb);
+    result            = vkCreateFramebuffer(m_device, &fbInfo, nullptr, &fb);
     assert(result == VK_SUCCESS);
     m_framebuffer.fboUI = fb;
   }
@@ -993,11 +918,11 @@ void ResourcesVK::initPipes()
   attributes[1].offset = m_fp16 ? offsetof(CadScene::VertexAttributesFP16, normal) : offsetof(CadScene::VertexAttributes, normal);
   for(uint32_t i = 0; i < m_extraAttributes; i++)
   {
-    attributes[2 + i].location = VERTEX_XTRA + i;
+    attributes[2 + i].location = VERTEX_EXTRAS + i;
     attributes[2 + i].binding  = 1;
     attributes[2 + i].format   = m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT;
     attributes[2 + i].offset   = m_fp16 ? (sizeof(CadScene::VertexAttributesFP16) + sizeof(half) * 4 * i) :
-                                        (sizeof(CadScene::VertexAttributes) + sizeof(float) * 4 * i);
+                                          (sizeof(CadScene::VertexAttributes) + sizeof(float) * 4 * i);
   }
 
   VkPipelineVertexInputStateCreateInfo viStateInfo = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
@@ -1070,132 +995,143 @@ void ResourcesVK::initPipes()
   dynStateInfo.dynamicStateCount                = NV_ARRAY_SIZE(dynStates);
   dynStateInfo.pDynamicStates                   = dynStates;
 
-  for(int mode = 0; mode < (m_nativeMeshSupport ? NUM_MODES : MODE_BBOX + 1); mode++)
+  VkGraphicsPipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+  pipelineInfo.pVertexInputState            = &viStateInfo;
+  pipelineInfo.pInputAssemblyState          = &iaStateInfo;
+  pipelineInfo.pViewportState               = &vpStateInfo;
+  pipelineInfo.pColorBlendState             = &cbStateInfo;
+  pipelineInfo.pDepthStencilState           = &dsStateInfo;
+  pipelineInfo.pMultisampleState            = &msStateInfo;
+  pipelineInfo.pTessellationState           = &tessStateInfo;
+  pipelineInfo.pDynamicState                = &dynStateInfo;
+
+  pipelineInfo.renderPass = m_framebuffer.passPreserve;
+  pipelineInfo.subpass    = 0;
+
+  VkPipelineShaderStageCreateInfo stages[3];
+  memset(stages, 0, sizeof(stages));
+  pipelineInfo.pStages = stages;
+
+  stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[0].pName = "main";
+  stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[1].pName = "main";
+  stages[2].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[2].pName = "main";
+
+
   {
-    VkPipeline                   pipeline;
-    VkGraphicsPipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    pipelineInfo.pVertexInputState            = &viStateInfo;
-    pipelineInfo.pInputAssemblyState          = &iaStateInfo;
-    pipelineInfo.pViewportState               = &vpStateInfo;
-    pipelineInfo.pRasterizationState          = (mode == MODE_BBOX) ? &rsStateInfoBbox : &rsStateInfo;
-    pipelineInfo.pColorBlendState             = &cbStateInfo;
-    pipelineInfo.pDepthStencilState           = &dsStateInfo;
-    pipelineInfo.pMultisampleState            = &msStateInfo;
-    pipelineInfo.pTessellationState           = &tessStateInfo;
-    pipelineInfo.pDynamicState                = &dynStateInfo;
+    pipelineInfo.pRasterizationState = &rsStateInfo;
+    pipelineInfo.layout              = m_setupRegular.container.getPipeLayout();
+    iaStateInfo.topology             = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-    pipelineInfo.renderPass = m_framebuffer.passPreserve;
-    pipelineInfo.subpass    = 0;
+    pipelineInfo.stageCount = 2;
+    stages[0].stage         = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module        = m_shaderManager.get(m_shaders.object_vertex);
+    stages[1].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module        = m_shaderManager.get(m_shaders.object_fragment);
 
-    switch(mode)
-    {
-      case MODE_REGULAR:
-        pipelineInfo.layout  = m_setupRegular.container.getPipeLayout();
-        iaStateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        break;
-      case MODE_BBOX:
-        pipelineInfo.layout                         = m_setupBbox.container.getPipeLayout();
-        iaStateInfo.topology                        = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-        viStateInfo.vertexBindingDescriptionCount   = 0;
-        viStateInfo.vertexAttributeDescriptionCount = 0;
-        viStateInfo.pVertexAttributeDescriptions    = nullptr;
-        viStateInfo.pVertexBindingDescriptions      = nullptr;
-        break;
-      case MODE_MESH:
-        iaStateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        pipelineInfo.layout  = m_setupMeshTask.container.getPipeLayout();
-        break;
-      case MODE_TASK_MESH:
-        iaStateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        pipelineInfo.layout  = m_setupMeshTask.container.getPipeLayout();
-        break;
-    }
-
-    VkPipelineShaderStageCreateInfo stages[3];
-    memset(stages, 0, sizeof(stages));
-    pipelineInfo.pStages = stages;
-
-    VkPipelineShaderStageCreateInfo& stage0 = stages[0];
-    stage0.sType                            = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage0.pName                            = "main";
-
-    VkPipelineShaderStageCreateInfo& stage1 = stages[1];
-    stage1.sType                            = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage1.pName                            = "main";
-
-    VkPipelineShaderStageCreateInfo& stage2 = stages[2];
-    stage2.sType                            = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage2.pName                            = "main";
-
-    switch(mode)
-    {
-      case MODE_REGULAR:
-        pipelineInfo.stageCount = 2;
-        stage0.stage            = VK_SHADER_STAGE_VERTEX_BIT;
-        stage0.module           = m_shaderManager.get(m_shaders.object_vertex);
-        stage1.stage            = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stage1.module           = m_shaderManager.get(m_shaders.object_fragment);
-        break;
-      case MODE_BBOX:
-        pipelineInfo.stageCount = 3;
-        stage0.stage            = VK_SHADER_STAGE_VERTEX_BIT;
-        stage0.module           = m_shaderManager.get(m_shaders.bbox_vertex);
-        stage1.stage            = VK_SHADER_STAGE_GEOMETRY_BIT;
-        stage1.module           = m_shaderManager.get(m_shaders.bbox_geometry);
-        stage2.stage            = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stage2.module           = m_shaderManager.get(m_shaders.bbox_fragment);
-        break;
-      case MODE_MESH:
-        pipelineInfo.stageCount = 2;
-        stage0.stage            = VK_SHADER_STAGE_MESH_BIT_NV;
-        stage0.module           = m_shaderManager.get(m_shaders.object_mesh);
-        stage1.stage            = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stage1.module           = m_shaderManager.get(m_shaders.object_fragment);
-        break;
-      case MODE_TASK_MESH:
-        pipelineInfo.stageCount = 3;
-        stage0.stage            = VK_SHADER_STAGE_TASK_BIT_NV;
-        stage0.module           = m_shaderManager.get(m_shaders.object_task);
-        stage1.stage            = VK_SHADER_STAGE_MESH_BIT_NV;
-        stage1.module           = m_shaderManager.get(m_shaders.object_task_mesh);
-        stage2.stage            = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stage2.module           = m_shaderManager.get(m_shaders.object_fragment);
-        break;
-    }
-
-    result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
+    result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_setupRegular.pipeline);
     assert(result == VK_SUCCESS);
+  }
 
-    switch(mode)
+  {
+    pipelineInfo.pRasterizationState            = &rsStateInfoBbox;
+    pipelineInfo.layout                         = m_setupBbox.container.getPipeLayout();
+    iaStateInfo.topology                        = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    viStateInfo.vertexBindingDescriptionCount   = 0;
+    viStateInfo.vertexAttributeDescriptionCount = 0;
+    viStateInfo.pVertexAttributeDescriptions    = nullptr;
+    viStateInfo.pVertexBindingDescriptions      = nullptr;
+
+    pipelineInfo.stageCount = 3;
+    stages[0].stage         = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module        = m_shaderManager.get(m_shaders.bbox_vertex);
+    stages[1].stage         = VK_SHADER_STAGE_GEOMETRY_BIT;
+    stages[1].module        = m_shaderManager.get(m_shaders.bbox_geometry);
+    stages[2].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[2].module        = m_shaderManager.get(m_shaders.bbox_fragment);
+
+    result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_setupBbox.pipeline);
+    assert(result == VK_SUCCESS);
+  }
+
+
+  if(m_nativeMeshSupport)
+  {
+    // keep viStateInfo like above, i.e. no vertex inputs
+    pipelineInfo.pRasterizationState = &rsStateInfo;
+    pipelineInfo.pVertexInputState   = nullptr;
+    pipelineInfo.pInputAssemblyState = nullptr;
+    pipelineInfo.layout              = m_setupMeshTask.container.getPipeLayout();
+
     {
-      case MODE_REGULAR:
-        m_setupRegular.pipeline = pipeline;
-        break;
-      case MODE_BBOX:
-        m_setupBbox.pipeline = pipeline;
-        break;
-      case MODE_MESH:
-        m_setupMeshTask.pipelineNoTask = pipeline;
-        break;
-      case MODE_TASK_MESH:
-        m_setupMeshTask.pipeline = pipeline;
-        break;
+      pipelineInfo.stageCount = 2;
+      stages[0].stage         = VK_SHADER_STAGE_MESH_BIT_NV;
+      stages[0].module        = m_shaderManager.get(m_shaders.object_mesh);
+      stages[1].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
+      stages[1].module        = m_shaderManager.get(m_shaders.object_mesh_fragment);
+
+      result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_setupMeshTask.pipeline);
+      assert(result == VK_SUCCESS);
+    }
+
+    {
+      pipelineInfo.stageCount = 3;
+      stages[0].stage         = VK_SHADER_STAGE_TASK_BIT_NV;
+      stages[0].module        = m_shaderManager.get(m_shaders.object_task);
+      stages[1].stage         = VK_SHADER_STAGE_MESH_BIT_NV;
+      stages[1].module        = m_shaderManager.get(m_shaders.object_task_mesh);
+      stages[2].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
+      stages[2].module        = m_shaderManager.get(m_shaders.object_mesh_fragment);
+
+      result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_setupMeshTask.pipelineTask);
+      assert(result == VK_SUCCESS);
+    }
+
+    {
+      pipelineInfo.stageCount = 2;
+      stages[0].stage         = VK_SHADER_STAGE_MESH_BIT_NV;
+      stages[0].module        = m_shaderManager.get(m_shaders.object_cull_mesh);
+      stages[1].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
+      stages[1].module        = m_shaderManager.get(m_shaders.object_mesh_fragment);
+
+      result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_setupMeshTask.pipelineCull);
+      assert(result == VK_SUCCESS);
+    }
+
+    {
+      pipelineInfo.stageCount = 3;
+      stages[0].stage         = VK_SHADER_STAGE_TASK_BIT_NV;
+      stages[0].module        = m_shaderManager.get(m_shaders.object_task);
+      stages[1].stage         = VK_SHADER_STAGE_MESH_BIT_NV;
+      stages[1].module        = m_shaderManager.get(m_shaders.object_cull_task_mesh);
+      stages[2].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
+      stages[2].module        = m_shaderManager.get(m_shaders.object_mesh_fragment);
+
+      result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_setupMeshTask.pipelineCullTask);
+      assert(result == VK_SUCCESS);
     }
   }
 }
 
 void ResourcesVK::deinitPipes()
 {
-  vkDestroyPipeline(m_device, m_setupRegular.pipeline, NULL);
-  m_setupRegular.pipeline = NULL;
-  vkDestroyPipeline(m_device, m_setupBbox.pipeline, NULL);
-  m_setupBbox.pipeline = NULL;
+  vkDestroyPipeline(m_device, m_setupRegular.pipeline, nullptr);
+  m_setupRegular.pipeline = nullptr;
+  vkDestroyPipeline(m_device, m_setupBbox.pipeline, nullptr);
+  m_setupBbox.pipeline = nullptr;
   if(m_nativeMeshSupport)
   {
-    vkDestroyPipeline(m_device, m_setupMeshTask.pipeline, NULL);
-    m_setupMeshTask.pipeline = NULL;
-    vkDestroyPipeline(m_device, m_setupMeshTask.pipelineNoTask, NULL);
-    m_setupMeshTask.pipelineNoTask = NULL;
+    vkDestroyPipeline(m_device, m_setupMeshTask.pipeline, nullptr);
+    m_setupMeshTask.pipeline = nullptr;
+    vkDestroyPipeline(m_device, m_setupMeshTask.pipelineTask, nullptr);
+    m_setupMeshTask.pipelineTask = nullptr;
+
+    vkDestroyPipeline(m_device, m_setupMeshTask.pipelineCull, nullptr);
+    m_setupMeshTask.pipelineCull = nullptr;
+    vkDestroyPipeline(m_device, m_setupMeshTask.pipelineCullTask, nullptr);
+    m_setupMeshTask.pipelineCullTask = nullptr;
   }
 }
 
@@ -1247,7 +1183,7 @@ void ResourcesVK::cmdPipelineBarrier(VkCommandBuffer cmd) const
     memBarrier.image                = m_framebuffer.imgColor;
     memBarrier.subresourceRange     = colorRange;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_FALSE,
-                         0, NULL, 0, NULL, 1, &memBarrier);
+                         0, nullptr, 0, nullptr, 1, &memBarrier);
   }
 
   // Prepare the depth+stencil for reading.
@@ -1271,7 +1207,7 @@ void ResourcesVK::cmdPipelineBarrier(VkCommandBuffer cmd) const
     memBarrier.subresourceRange = depthStencilRange;
 
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-                         VK_FALSE, 0, NULL, 0, NULL, 1, &memBarrier);
+                         VK_FALSE, 0, nullptr, 0, nullptr, 1, &memBarrier);
   }
 }
 
@@ -1305,7 +1241,7 @@ void ResourcesVK::cmdImageTransition(VkCommandBuffer    cmd,
   memBarrier.image                = img;
   memBarrier.subresourceRange     = range;
 
-  vkCmdPipelineBarrier(cmd, srcPipe, dstPipe, VK_FALSE, 0, NULL, 0, NULL, 1, &memBarrier);
+  vkCmdPipelineBarrier(cmd, srcPipe, dstPipe, VK_FALSE, 0, nullptr, 0, nullptr, 1, &memBarrier);
 }
 
 VkCommandBuffer ResourcesVK::createCmdBuffer(VkCommandPool pool, bool singleshot, bool primary, bool secondaryInClear) const
@@ -1376,10 +1312,6 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
 
   m_scene.init(cadscene, m_device, m_physical, m_queue, m_queueFamily);
 
-
-  uint32_t geometryBindings =
-      USE_PER_GEOMETRY_VIEWS ? uint32_t(m_scene.m_geometry.size()) : uint32_t(m_scene.m_geometryMem.getChunkCount() * 2);
-
   {
     // Allocation phase
 
@@ -1390,13 +1322,13 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
 
       m_setupBbox.container.at(DSET_SCENE).initPool(1);
       m_setupBbox.container.at(DSET_OBJECT).initPool(1);
-      m_setupBbox.container.at(DSET_GEOMETRY).initPool(geometryBindings);
+      m_setupBbox.container.at(DSET_GEOMETRY).initPool(uint32_t(m_scene.m_geometryMem.getChunkCount()));
     }
     if(m_nativeMeshSupport)
     {
       m_setupMeshTask.container.at(DSET_SCENE).initPool(1);
       m_setupMeshTask.container.at(DSET_OBJECT).initPool(1);
-      m_setupMeshTask.container.at(DSET_GEOMETRY).initPool(geometryBindings);
+      m_setupMeshTask.container.at(DSET_GEOMETRY).initPool(uint32_t(m_scene.m_geometryMem.getChunkCount()));
     }
   }
 
@@ -1424,37 +1356,6 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
         vkUpdateDescriptorSets(m_device, NV_ARRAY_SIZE(updateDescriptors), updateDescriptors, 0, 0);
       }
     }
-#if USE_PER_GEOMETRY_VIEWS
-    {
-      std::vector<VkWriteDescriptorSet> writeUpdates;
-
-      for(uint32_t g = 0; g < m_scene.m_geometry.size(); g++)
-      {
-        CadSceneVK::Geometry& geom = m_scene.m_geometry[g];
-
-        if(!geom.meshletDesc.range)
-          continue;
-
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_MESHLETDESC, &geom.meshletDesc));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_PRIM, &geom.meshletPrim));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_VBO, &geom.vboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_ABO, &geom.aboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_IBO, &geom.vertView));
-
-
-        if(m_nativeMeshSupport)
-        {
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_MESHLETDESC, &geom.meshletDesc));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_PRIM, &geom.meshletPrim));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_VBO, &geom.vboView));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_ABO, &geom.aboView));
-          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_IBO, &geom.vertView));
-        }
-      }
-
-      vkUpdateDescriptorSets(m_device, (uint32_t)writeUpdates.size(), writeUpdates.data(), 0, 0);
-    }
-#else
     {
       std::vector<VkWriteDescriptorSet> writeUpdates;
 
@@ -1462,54 +1363,26 @@ bool ResourcesVK::initScene(const CadScene& cadscene)
       {
         const auto& chunk = m_scene.m_geometryMem.getChunk(g);
 
-
         writeUpdates.push_back(
-            m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
+            m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
 
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
-
-        writeUpdates.push_back(
-            m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
-
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
-        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
-
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_VBO, &chunk.vboView));
+        writeUpdates.push_back(m_setupBbox.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_ABO, &chunk.aboView));
 
         if(m_nativeMeshSupport)
         {
           writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_VBO, &chunk.vboView));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_ABO, &chunk.aboView));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 0, GEOMETRY_TEX_IBO, &chunk.vert32View));
+              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
 
-
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_MESHLETDESC, &chunk.meshInfo));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_VBO, &chunk.vboView));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_ABO, &chunk.aboView));
-          writeUpdates.push_back(
-              m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g * 2 + 1, GEOMETRY_TEX_IBO, &chunk.vert16View));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_SSBO_PRIM, &chunk.meshIndicesInfo));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_VBO, &chunk.vboView));
+          writeUpdates.push_back(m_setupMeshTask.container.at(DSET_GEOMETRY).makeWrite(g, GEOMETRY_TEX_ABO, &chunk.aboView));
         }
       }
 
       vkUpdateDescriptorSets(m_device, (uint32_t)writeUpdates.size(), writeUpdates.data(), 0, 0);
     }
-#endif
   }
 
   // fp16/
@@ -1595,7 +1468,6 @@ VkCommandBuffer ResourcesVK::createBoundingBoxCmdBuffer(VkCommandPool pool, cons
   int  lastGeometry = -1;
   int  lastMatrix   = -1;
   int  lastChunk    = -1;
-  bool lastShorts   = false;
 
   bool first = true;
   for(unsigned int i = 0; i < numItems; i++)
@@ -1620,23 +1492,17 @@ VkCommandBuffer ResourcesVK::createBoundingBoxCmdBuffer(VkCommandPool pool, cons
       const CadSceneVK::Geometry& geovk = m_scene.m_geometry[di.geometryIndex];
       int                         chunk = int(geovk.allocation.chunkIndex);
 
-#if USE_PER_GEOMETRY_VIEWS
-      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_GEOMETRY, 1,
-                              setup.container.at(DSET_GEOMETRY).getSets() + di.geometryIndex, 0, nullptr);
-#else
-      if(chunk != lastChunk || di.shorts != lastShorts)
+
+      if(chunk != lastChunk)
       {
-        int idx = chunk * 2 + (di.shorts ? 1 : 0);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_GEOMETRY, 1,
-                                setup.container.at(DSET_GEOMETRY).getSets() + idx, 0, nullptr);
+                                setup.container.at(DSET_GEOMETRY).getSets() + chunk, 0, nullptr);
 
         lastChunk = chunk;
-        lastShorts = di.shorts;
       }
 
       uint32_t offsets[4] = {uint32_t(geovk.meshletDesc.offset / sizeof(NVMeshlet::MeshletDesc)), 0, 0, 0};
       vkCmdPushConstants(cmd, setup.container.getPipeLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offsets), offsets);
-#endif
 
       lastGeometry = di.geometryIndex;
     }

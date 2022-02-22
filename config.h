@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -33,17 +33,18 @@
 #define NVMESHLET_VERTEX_ALIGNMENT  16
 #define NVMESHLET_BLOCK_ELEMENTS    32
 #define NVMESHLET_PACK_ALIGNMENT    16
+#define NVMESHLET_INDICES_PER_FETCH 8
 
-#ifdef VULKAN 
+#define NVMESHLET_ENCODING_PACKBASIC 1
+
+#if !defined(__cplusplus)
+#ifdef VULKAN
 #define IS_VULKAN 1
 #endif
 
 #ifndef IS_VULKAN
 #define IS_VULKAN 0
 #endif
-
-#if IS_VULKAN && !defined(__cplusplus)
-#extension GL_KHR_vulkan_glsl : enable
 #endif
 
 #if IS_VULKAN
@@ -54,20 +55,10 @@
 
 ///////////////////////////////////////////////////
 
-// must not change
-#define WARP_SIZE  32
-#define WARP_STEPS 5
-
-///////////////////////////////////////////////////
-
-// set to zero for less resources being generated
-// also reduces runtime binding costs
-#define USE_PER_GEOMETRY_VIEWS         0
 #if defined(__cplusplus)
 
   enum MeshletBuilderType {
     MESHLET_BUILDER_PACKBASIC,
-    MESHLET_BUILDER_ARRAYS,
   };
 
 #endif

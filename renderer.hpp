@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -31,9 +31,9 @@ class RenderList
 {
 public:
   enum Strategy
-  {                   // per-object
-    STRATEGY_SINGLE,  // entire geometry
-    STRATEGY_INDIVIDUAL,
+  {                   
+    STRATEGY_SINGLE,     // entire geometry
+    STRATEGY_INDIVIDUAL, // per-object
   };
 
   struct Config
@@ -42,7 +42,8 @@ public:
     uint32_t objectFrom;
     uint32_t objectNum;
     int32_t  indexThreshold;
-    uint32_t minTaskMeshlets;
+    uint32_t taskMinMeshlets;
+    uint32_t taskNumMeshlets = 32;
   };
 
   struct DrawItem
@@ -69,7 +70,7 @@ class Renderer
 public:
   struct Config
   {
-    bool blah = false;
+    bool useCulling = false;
   };
 
   class Type
@@ -78,7 +79,11 @@ public:
     Type() { getRegistry().push_back(this); }
 
   public:
-    virtual bool         isAvailable() const = 0;
+#if IS_OPENGL
+    virtual bool         isAvailable(const nvgl::ContextWindow* contextWindow) const = 0;
+#elif IS_VULKAN
+    virtual bool         isAvailable(const nvvk::Context* context) const = 0;
+#endif
     virtual const char*  name() const        = 0;
     virtual Renderer*    create() const      = 0;
     virtual unsigned int priority() const { return 0xFF; }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
 
 #include "cadscene_gl.hpp"
-#include "nvmeshlet_array.hpp"
+#include "nvmeshlet_packbasic.hpp"
 #include <inttypes.h>
 #include <nvgl/glsltypes_gl.hpp>
 #include <nvh/nvprint.hpp>
@@ -115,8 +115,8 @@ void GeometryMemoryGL::finalize()
 
   if(chunk.meshSize)
   {
-    // safety padding
-    chunk.meshSize += sizeof(NVMeshlet::MeshletDesc) * NVMeshlet::MESHLETS_PER_TASK;
+    // safety padding / minimum size
+    chunk.meshSize = std::max(chunk.meshSize, size_t(16));
     chunk.meshIndicesSize += 16;
 
     glCreateBuffers(1, &chunk.meshGL);
@@ -125,12 +125,6 @@ void GeometryMemoryGL::finalize()
     glCreateBuffers(1, &chunk.meshIndicesGL);
     glNamedBufferStorage(chunk.meshIndicesGL, chunk.meshIndicesSize, 0, GL_DYNAMIC_STORAGE_BIT);
 
-    glCreateTextures(GL_TEXTURE_BUFFER, 1, &chunk.meshVertex16TEX);
-    glTextureBuffer(chunk.meshVertex16TEX, GL_R16UI, chunk.meshIndicesGL);
-
-    glCreateTextures(GL_TEXTURE_BUFFER, 1, &chunk.meshVertex32TEX);
-    glTextureBuffer(chunk.meshVertex32TEX, GL_R32UI, chunk.meshIndicesGL);
-
     if(m_bindless)
     {
       glGetNamedBufferParameterui64vNV(chunk.meshGL, GL_BUFFER_GPU_ADDRESS_NV, &chunk.meshADDR);
@@ -138,11 +132,6 @@ void GeometryMemoryGL::finalize()
 
       glGetNamedBufferParameterui64vNV(chunk.meshIndicesGL, GL_BUFFER_GPU_ADDRESS_NV, &chunk.meshIndicesADDR);
       glMakeNamedBufferResidentNV(chunk.meshIndicesGL, GL_READ_ONLY);
-
-      chunk.meshVertex16TEXADDR = glGetTextureHandleARB(chunk.meshVertex16TEX);
-      chunk.meshVertex32TEXADDR = glGetTextureHandleARB(chunk.meshVertex32TEX);
-      glMakeTextureHandleResidentARB(chunk.meshVertex16TEXADDR);
-      glMakeTextureHandleResidentARB(chunk.meshVertex32TEXADDR);
     }
   }
 }
@@ -197,8 +186,6 @@ void GeometryMemoryGL::deinit()
     {
       if(m_chunks[i].meshGL)
       {
-        glMakeTextureHandleNonResidentARB(m_chunks[i].meshVertex16TEXADDR);
-        glMakeTextureHandleNonResidentARB(m_chunks[i].meshVertex32TEXADDR);
         glMakeNamedBufferNonResidentNV(m_chunks[i].meshGL);
         glMakeNamedBufferNonResidentNV(m_chunks[i].meshIndicesGL);
       }
@@ -214,8 +201,6 @@ void GeometryMemoryGL::deinit()
 
     if(m_chunks[i].meshGL)
     {
-      glDeleteTextures(1, &m_chunks[i].meshVertex16TEX);
-      glDeleteTextures(1, &m_chunks[i].meshVertex32TEX);
       glDeleteBuffers(1, &m_chunks[i].meshGL);
       glDeleteBuffers(1, &m_chunks[i].meshIndicesGL);
     }
@@ -277,21 +262,13 @@ void CadSceneGL::init(const CadScene& cadscene)
 
     GLintptr descOffset = geom.mem.meshOffset;
     GLintptr primOffset = geom.mem.meshIndicesOffset;
-    GLintptr vertOffset = geom.mem.meshIndicesOffset + NVMeshlet::arrayIndicesAlignedSize(cadgeom.meshlet.primSize);
+    GLintptr vertOffset = geom.mem.meshIndicesOffset;
 
     glNamedBufferSubData(chunk.meshGL, descOffset, cadgeom.meshlet.descSize, cadgeom.meshlet.descData);
     glNamedBufferSubData(chunk.meshIndicesGL, primOffset, cadgeom.meshlet.primSize, cadgeom.meshlet.primData);
-    glNamedBufferSubData(chunk.meshIndicesGL, vertOffset, cadgeom.meshlet.vertSize, cadgeom.meshlet.vertData);
 
-    geom.topoMeshlet = nvgl::BufferBinding(chunk.meshGL, descOffset, cadgeom.meshlet.descSize + sizeof(NVMeshlet::MeshletDesc) * NVMeshlet::MESHLETS_PER_TASK, chunk.meshADDR);
+    geom.topoMeshlet = nvgl::BufferBinding(chunk.meshGL, descOffset, cadgeom.meshlet.descSize, chunk.meshADDR);
     geom.topoPrim    = nvgl::BufferBinding(chunk.meshIndicesGL, primOffset, cadgeom.meshlet.primSize, chunk.meshIndicesADDR);
-    geom.topoVert    = nvgl::BufferBinding(chunk.meshIndicesGL, vertOffset, cadgeom.meshlet.vertSize, chunk.meshIndicesADDR);
-
-#if USE_PER_GEOMETRY_VIEWS
-    geom.vboTEX.create(chunk.vboGL, geom.mem.vboOffset, cadgeom.vboSize, cadscene.m_cfg.fp16 ? GL_RGBA16F : GL_RGBA32F);
-    geom.aboTEX.create(chunk.aboGL, geom.mem.aboOffset, cadgeom.aboSize, cadscene.m_cfg.fp16 ? GL_RGBA16F : GL_RGBA32F);
-    geom.vertTEX.create(chunk.meshGL, vertOffset, cadgeom.meshlet.vertSize, cadgeom.useShorts ? GL_R16UI : GL_R32UI);
-#endif
   }
 
   m_buffers.materials.create(sizeof(CadScene::Material) * cadscene.m_materials.size(), cadscene.m_materials.data(), 0, 0);
@@ -305,15 +282,6 @@ void CadSceneGL::deinit()
 
   m_buffers.matrices.destroy();
   m_buffers.materials.destroy();
-
-#if USE_PER_GEOMETRY_VIEWS
-  for(size_t i = 0; i < m_geometry.size(); i++)
-  {
-    m_geometry[i].vboTEX.destroy();
-    m_geometry[i].aboTEX.destroy();
-    m_geometry[i].vertTEX.destroy();
-  }
-#endif
 
   m_geometryMem.deinit();
 

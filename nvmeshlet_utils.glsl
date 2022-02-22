@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -42,7 +42,7 @@
 #define USE_EARLY_CLIPPINGCULL 1
 #endif
 
-#if NVMESHLET_USE_PACKBASIC
+#if NVMESHLET_ENCODING == NVMESHLET_ENCODING_PACKBASIC
   /*
   Pack
     // x
@@ -86,41 +86,8 @@ void decodeMeshlet( uvec4 meshletDesc,
   primStart  =  (packOffset + ((vMax + 1 + vidxDiv - 1) / vidxDiv) + 1) & ~1;
 }
 
-#elif NVMESHLET_USE_ARRAYS
-
-  /*
-  Array
-    // x
-    unsigned bboxMinX   : 8;
-    unsigned bboxMinY   : 8;
-    unsigned bboxMinZ   : 8;
-    unsigned vertMax    : 8;
-        
-    // y
-    unsigned bboxMaxX   : 8;
-    unsigned bboxMaxY   : 8;
-    unsigned bboxMaxZ   : 8;
-    unsigned primMax    : 8;
-    
-    // z
-    unsigned vertBegin  : 20;
-    signed   coneX      : 8;
-    unsigned coneAngleL : 4;
-
-    // w
-    unsigned primBegin  : 20;
-    signed   coneY      : 8;
-    unsigned coneAngleU : 4;
-  */
-
-void decodeMeshlet(uvec4 meshletDesc, out uint vertMax, out uint primMax, out uint vertBegin, out uint primBegin)
-{
-  vertBegin = (meshletDesc.z & 0xFFFFF) * NVMESHLET_VERTEX_ALIGNMENT;
-  primBegin = (meshletDesc.w & 0xFFFFF) * NVMESHLET_PRIM_ALIGNMENT;
-  vertMax   = (meshletDesc.x >> 24);
-  primMax   = (meshletDesc.y >> 24);
-}
-
+#else
+  #error "NVMESHLET_ENCODING not supported"
 #endif
 
 bool isMeshletValid(uvec4 meshletDesc)
@@ -160,14 +127,12 @@ vec3 oct_to_vec3(vec2 e) {
 
 void decodeNormalAngle(uvec4 meshletDesc, in ObjectData object, out vec3 oNormal, out float oAngle)
 {
-#if NVMESHLET_USE_PACKBASIC
+#if NVMESHLET_ENCODING == NVMESHLET_ENCODING_PACKBASIC
   uint packedVec =  meshletDesc.z;
 #else
-  uint packedVec =  (((meshletDesc.z >> 20) & 0xFF) << 0)  |
-                    (((meshletDesc.w >> 20) & 0xFF) << 8)  |
-                    (((meshletDesc.z >> 28)       ) << 16) |
-                    (((meshletDesc.w >> 28)       ) << 20);
+  #error "NVMESHLET_ENCODING not supported"
 #endif
+
   vec3 unpackedVec = unpackSnorm4x8(packedVec).xyz;
   
   oNormal = oct_to_vec3(unpackedVec.xy) * object.winding;
@@ -213,29 +178,8 @@ bool pixelBboxCull(vec2 pixelMin, vec2 pixelMax){
 
 vec4 getBoxCorner(vec3 bboxMin, vec3 bboxMax, int n)
 {
-#if 1
   bvec3 useMax = bvec3((n & 1) != 0, (n & 2) != 0, (n & 4) != 0);
   return vec4(mix(bboxMin, bboxMax, useMax),1);
-#else
-  switch(n){
-  case 0:
-    return vec4(bboxMin.x,bboxMin.y,bboxMin.z,1);
-  case 1:
-    return vec4(bboxMax.x,bboxMin.y,bboxMin.z,1);
-  case 2:
-    return vec4(bboxMin.x,bboxMax.y,bboxMin.z,1);
-  case 3:
-    return vec4(bboxMax.x,bboxMax.y,bboxMin.z,1);
-  case 4:
-    return vec4(bboxMin.x,bboxMin.y,bboxMax.z,1);
-  case 5:
-    return vec4(bboxMax.x,bboxMin.y,bboxMax.z,1);
-  case 6:
-    return vec4(bboxMin.x,bboxMax.y,bboxMax.z,1);
-  case 7:
-    return vec4(bboxMax.x,bboxMax.y,bboxMax.z,1);
-  }
-#endif
 }
 
 bool earlyCull(uvec4 meshletDesc, in ObjectData object)
@@ -320,10 +264,10 @@ vec2 getScreenPos(vec4 hPos)
   return vec2((hPos.xy * 0.5 + 0.5) * scene.viewportf);
 }
 
-int testTriangle(vec2 a, vec2 b, vec2 c, float winding, bool frustum)
+bool testTriangle(vec2 a, vec2 b, vec2 c, float winding, bool frustum)
 {
 #if !USE_TRIANGLECULL
-  { return 1; }
+  { return true; }
 #endif
 
 #if USE_BACKFACECULL
@@ -337,7 +281,7 @@ int testTriangle(vec2 a, vec2 b, vec2 c, float winding, bool frustum)
   // cross-product to compensate.
   cross_product = -cross_product;
 #endif
-  if (cross_product * winding < 0) return 0;
+  if (cross_product * winding < 0) return false;
 #endif
 
 #if USE_VIEWPORTCULL || USE_SUBPIXELCULL
@@ -350,19 +294,19 @@ int testTriangle(vec2 a, vec2 b, vec2 c, float winding, bool frustum)
 
 #if USE_VIEWPORTCULL
   // viewport culling
-  if (frustum && ((pixelMax.x < 0) || (pixelMin.x >= scene.viewportf.x) || (pixelMax.y < 0) || (pixelMin.y >= scene.viewportf.y))) return 0;
+  if (frustum && ((pixelMax.x < 0) || (pixelMin.x >= scene.viewportf.x) || (pixelMax.y < 0) || (pixelMin.y >= scene.viewportf.y))) return false;
 #endif
 
 #if USE_SUBPIXELCULL
-  if (pixelBboxCull(pixelMin, pixelMax)) return 0;
+  if (pixelBboxCull(pixelMin, pixelMax)) return false;
 #endif 
-  return 1;
+  return true;
 }
 
-int testTriangle(vec2 a, vec2 b, vec2 c, float winding, uint abits, uint bbits, uint cbits)
+bool testTriangle(vec2 a, vec2 b, vec2 c, float winding, uint abits, uint bbits, uint cbits)
 {
   if ((abits & bbits & cbits) == 0){
     return testTriangle(a,b,c,winding,false);
   }
-  return 0;
+  return false;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -23,7 +23,7 @@
 
 #include <nvmath/nvmath_glsltypes.h>
 
-#include "nvmeshlet_array.hpp"
+#include "nvmeshlet_builder.hpp"
 #include "renderer.hpp"
 #include "resources_gl.hpp"
 
@@ -38,7 +38,7 @@ class RendererMeshGL : public Renderer
 public:
   class Type : public Renderer::Type
   {
-    bool        isAvailable() const { return has_GL_NV_mesh_shader != 0; }
+    bool        isAvailable(const nvgl::ContextWindow* contextWindow) const { return has_GL_NV_mesh_shader != 0; }
     const char* name() const { return "GL mesh"; }
     Renderer*   create() const
     {
@@ -52,7 +52,7 @@ public:
   };
   class TypeVbum : public Renderer::Type
   {
-    bool isAvailable() const
+    bool isAvailable(const nvgl::ContextWindow* contextWindow) const
     {
       return has_GL_NV_vertex_buffer_unified_memory && has_GL_NV_uniform_buffer_unified_memory && has_GL_NV_mesh_shader;
     }
@@ -163,13 +163,15 @@ void RendererMeshGL::draw(const FrameConfig& global)
     int lastMatrix   = -1;
     int lastChunk    = -1;
 
-    bool lastShorts = false;
     bool lastTask   = false;
 
     int statsGeometry = 0;
     int statsMatrix   = 0;
     int statsMaterial = 0;
     int statsDraw     = 0;
+
+    GLuint meshTaskProgram =  m_config.useCulling ? res->m_programs.draw_object_cull_mesh_task : res->m_programs.draw_object_mesh_task;
+    GLuint meshNoTaskProgram = m_config.useCulling ? res->m_programs.draw_object_cull_mesh : res->m_programs.draw_object_mesh;
 
     bool first = true;
     for(int i = 0; i < m_list->m_drawItems.size(); i++)
@@ -180,7 +182,7 @@ void RendererMeshGL::draw(const FrameConfig& global)
 
       if(first || useTask != lastTask)
       {
-        glUseProgram(useTask ? res->m_programs.draw_object_mesh_task : res->m_programs.draw_object_mesh);
+        glUseProgram(useTask ? meshTaskProgram : meshNoTaskProgram);
         lastTask = useTask;
         first    = false;
       }
@@ -190,46 +192,28 @@ void RendererMeshGL::draw(const FrameConfig& global)
         const CadSceneGL::Geometry& geo   = sceneGL.m_geometry[di.geometryIndex];
         int                         chunk = int(geo.mem.chunkIndex);
 
-#if USE_PER_GEOMETRY_VIEWS
-        if(bindless)
+        if(lastChunk != chunk)
         {
-          glBufferAddressRangeNV(GL_UNIFORM_BUFFER_ADDRESS_NV, UBO_GEOMETRY,
-                                 res->m_setup.geometryBindings.bufferADDR + sizeof(CadSceneGL::GeometryUbo) * di.geometryIndex,
-                                 sizeof(CadSceneGL::GeometryUbo));
-        }
-        else
-        {
-          glBindBufferRange(GL_UNIFORM_BUFFER, UBO_GEOMETRY, res->m_setup.geometryBindings.buffer,
-                            sizeof(CadSceneGL::GeometryUbo) * di.geometryIndex, sizeof(CadSceneGL::GeometryUbo));
-        }
-#else
-        if(lastChunk != chunk || lastShorts != di.shorts)
-        {
-          int idx = chunk * 2 + (di.shorts ? 1 : 0);
           if(bindless)
           {
             glBufferAddressRangeNV(GL_UNIFORM_BUFFER_ADDRESS_NV, UBO_GEOMETRY,
-                                   res->m_setup.geometryBindings.bufferADDR + sizeof(CadSceneGL::GeometryUbo) * idx,
+                                   res->m_setup.geometryBindings.bufferADDR + sizeof(CadSceneGL::GeometryUbo) * chunk,
                                    sizeof(CadSceneGL::GeometryUbo));
           }
           else
           {
             glBindBufferRange(GL_UNIFORM_BUFFER, UBO_GEOMETRY, res->m_setup.geometryBindings.buffer,
-                              sizeof(CadSceneGL::GeometryUbo) * idx, sizeof(CadSceneGL::GeometryUbo));
+                              sizeof(CadSceneGL::GeometryUbo) * chunk, sizeof(CadSceneGL::GeometryUbo));
           }
 
           lastChunk  = chunk;
-          lastShorts = di.shorts;
         }
 
         // we use the same vertex offset for both vbo and abo, our allocator should ensure this condition.
         assert(uint32_t(geo.vbo.offset / vertexSize) == uint32_t(geo.abo.offset / vertexAttributeSize));
 
         glUniform4ui(0, uint32_t(geo.topoMeshlet.offset / sizeof(NVMeshlet::MeshletDesc)),
-                     uint32_t(geo.topoPrim.offset),
-                     uint32_t(geo.topoVert.offset / (di.shorts ? 2 : 4)), uint32_t(geo.vbo.offset / vertexSize));
-
-#endif
+                     uint32_t(geo.topoPrim.offset), 0, uint32_t(geo.vbo.offset / vertexSize));
 
         lastGeometry = di.geometryIndex;
 
@@ -262,7 +246,7 @@ void RendererMeshGL::draw(const FrameConfig& global)
       }
 
       uint32_t offset = useTask ? 0 : di.meshlet.offset;
-      uint32_t count  = useTask ? (di.meshlet.count + 31) / 32 : di.meshlet.count;
+      uint32_t count  = useTask ? ((di.meshlet.count + m_list->m_config.taskNumMeshlets - 1) / m_list->m_config.taskNumMeshlets) : di.meshlet.count;
 
       glDrawMeshTasksNV(offset, count);
 

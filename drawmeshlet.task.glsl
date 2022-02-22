@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,37 +13,42 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
 #version 450
 
-#extension GL_GOOGLE_include_directive : enable
-#extension GL_ARB_shading_language_include : enable
+#ifdef VULKAN 
+  #extension GL_GOOGLE_include_directive : enable
+  #extension GL_EXT_control_flow_attributes: require
+  #define UNROLL_LOOP [[unroll]]
+#else
+  #extension GL_ARB_shading_language_include : enable
+  #pragma optionNV(unroll all)  
+  #define UNROLL_LOOP
+#endif
+
 #include "config.h"
 
 //////////////////////////////////////
 
-#define USE_NATIVE   1
-#extension GL_NV_mesh_shader : enable
-
+  #extension GL_NV_mesh_shader : require
+  
+//////////////////////////////////////
 
 #if IS_VULKAN
   // one of them provides uint8_t
-  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
-  #extension GL_NV_gpu_shader5 : enable
-    
-  #extension GL_KHR_shader_subgroup_basic : require
-  #extension GL_KHR_shader_subgroup_ballot : require
-  #extension GL_KHR_shader_subgroup_vote : require
+  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 #else
   #extension GL_NV_gpu_shader5 : require
   #extension GL_NV_bindless_texture : require
-  #extension GL_NV_shader_thread_group : require
-  #extension GL_NV_shader_thread_shuffle : require
 #endif
+
+  #extension GL_KHR_shader_subgroup_basic : require
+  #extension GL_KHR_shader_subgroup_ballot : require
+  #extension GL_KHR_shader_subgroup_vote : require
 
 /////////////////////////////////////////////////////////////////////////
 
@@ -51,9 +56,9 @@
 
 /////////////////////////////////////////////////////////////////////////
 
-#define GROUP_SIZE  WARP_SIZE
+#define WORKGROUP_SIZE  TASK_SUBGROUP_SIZE
 
-layout(local_size_x=GROUP_SIZE) in;
+layout(local_size_x=WORKGROUP_SIZE) in;
 
 /////////////////////////////////////
 // UNIFORMS
@@ -61,14 +66,9 @@ layout(local_size_x=GROUP_SIZE) in;
 #if IS_VULKAN
 
   layout(push_constant) uniform pushConstant{
-  #if !USE_PER_GEOMETRY_VIEWS
     uvec4     geometryOffsets;
-  #endif
     uvec4     assigns;
   };
-  #if USE_PER_GEOMETRY_VIEWS
-    uvec4 geometryOffsets = uvec4(0, 0, 0, 0);
-  #endif
 
   layout(std140, binding = SCENE_UBO_VIEW, set = DSET_SCENE) uniform sceneBuffer {
     SceneData scene;
@@ -88,18 +88,13 @@ layout(local_size_x=GROUP_SIZE) in;
     uvec2 primIndices[];
   };
 
-  layout(binding=GEOMETRY_TEX_IBO,  set=DSET_GEOMETRY)  uniform usamplerBuffer texIbo;
   layout(binding=GEOMETRY_TEX_VBO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texVbo;
   layout(binding=GEOMETRY_TEX_ABO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texAbo;
 
 #else
 
-  #if USE_PER_GEOMETRY_VIEWS
-    uvec4 geometryOffsets = uvec4(0,0,0,0);
-  #else
-    layout(location = 0) uniform uvec4 geometryOffsets;
-    // x: mesh, y: prim, z: index, w: vertex
-  #endif
+  layout(location = 0) uniform uvec4 geometryOffsets;
+  // x: mesh, y: prim, z: 0, w: vertex
 
   layout(location = 1) uniform uvec4 assigns;
 
@@ -118,7 +113,6 @@ layout(local_size_x=GROUP_SIZE) in;
   layout(std140, binding = UBO_GEOMETRY) uniform geometryBuffer{
     uvec4*          meshletDescs;
     uvec2*          primIndices;
-    usamplerBuffer  texIbo;
     samplerBuffer   texVbo;
     samplerBuffer   texAbo;
   };
@@ -128,16 +122,20 @@ layout(local_size_x=GROUP_SIZE) in;
 //////////////////////////////////////////////////////////////////////////
 // INPUT
 
-uint baseID = gl_WorkGroupID.x * GROUP_SIZE;
+uint baseID = gl_WorkGroupID.x * NVMESHLET_PER_TASK;
 uint laneID = gl_LocalInvocationID.x;
 
 //////////////////////////////////////////////////////////////////////////
 // OUTPUT
 
+  // on NVIDIA hw the task-shader output should stay below
+  // 108 bytes to stay on a very fast path. 236 bytes typically is
+  // okay as well, but more is not recommended.
+  
 taskNV out Task
 {
   uint      baseID;
-  uint8_t   subIDs[GROUP_SIZE];
+  uint8_t   deltaIDs[NVMESHLET_PER_TASK];
 } OUT;
 
 //////////////////////////////////////////////////////////////////////////
@@ -145,42 +143,46 @@ taskNV out Task
 
 #include "nvmeshlet_utils.glsl"
 
+  // The workgroup size of the shader may not have enough threads
+  // to do all the work in a unique thread.
+  // Therefore we might need to loop to process all the work.
+
+  #define TASK_MESHLET_ITERATIONS   ((NVMESHLET_PER_TASK + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE)
+
 /////////////////////////////////////////////////
 // EXECUTION
 
 void main()
 {
   baseID += assigns.x;
-  uvec4 desc = meshletDescs[min(baseID + laneID, assigns.y) + geometryOffsets.x];
-
-  bool render = !(baseID + laneID > assigns.y || earlyCull(desc, object));
   
-#if IS_VULKAN
-  uvec4 vote  = subgroupBallot(render);
-  uint  tasks = subgroupBallotBitCount(vote);
-  uint  voteGroup = vote.x;
-#else
-  uint vote = ballotThreadNV(render);
-  uint tasks = bitCount(vote);
-  uint voteGroup = vote;
-#endif
+  uint numOutTasks = 0;
+  
+  UNROLL_LOOP
+  for (uint i = 0; i < TASK_MESHLET_ITERATIONS; i++)
+  {
+    uint  meshletLocal  = laneID + i * WORKGROUP_SIZE;
+    uint  meshletGlobal = baseID + meshletLocal;
+    uvec4 desc          = meshletDescs[min(meshletGlobal, assigns.y) + geometryOffsets.x];
+    
+    bool render = !(meshletGlobal > assigns.y || earlyCull(desc, object));
 
-  if (laneID == 0) {
-    gl_TaskCountNV = tasks;
-    OUT.baseID = baseID;
-    #if USE_STATS
-      atomicAdd(stats.tasksOutput, 1);
-    #endif
+    uvec4 voteTasks = subgroupBallot(render);
+    uint  numTasks  = subgroupBallotBitCount(voteTasks);
+    uint idxOffset  = subgroupBallotExclusiveBitCount(voteTasks) + numOutTasks;
+    if (render) 
+    {
+      OUT.deltaIDs[idxOffset] = uint8_t(meshletLocal);
+    }
+    
+    numOutTasks += numTasks;
   }
 
-  {
-  #if IS_VULKAN
-    uint idxOffset = subgroupBallotExclusiveBitCount(vote);
-  #else
-    uint idxOffset = bitCount(vote & gl_ThreadLtMaskNV);
-  #endif
-    if (render) {
-      OUT.subIDs[idxOffset] = uint8_t(laneID);
-    }
+  if (laneID == 0) {
+    gl_TaskCountNV = numOutTasks;
+    OUT.baseID     = baseID;
+    #if USE_STATS
+      atomicAdd(stats.tasksOutput, numOutTasks);
+    #endif
   }
 }

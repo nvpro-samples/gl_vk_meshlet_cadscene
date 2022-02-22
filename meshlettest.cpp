@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -23,17 +23,22 @@
 
 #include <imgui/imgui_helper.h>
 
-#if HAS_OPENGL
+#if IS_OPENGL
 #include <nvgl/appwindowprofiler_gl.hpp>
 #include <nvgl/base_gl.hpp>
 #include <nvgl/error_gl.hpp>
 #include <nvgl/extensions_gl.hpp>
 #include <nvgl/glsltypes_gl.hpp>
-#else
+
+#define EXE_NAME "gl_meshlet_cadscene"
+
+#elif IS_VULKAN
 #include <nvvk/appwindowprofiler_vk.hpp>
+#include <nvvk/context_vk.hpp>
+
+#define EXE_NAME "vk_meshlet_cadscene"
 #endif
 
-#include <nvvk/context_vk.hpp>
 
 #include <nvh/cameracontrol.hpp>
 #include <nvh/fileoperations.hpp>
@@ -44,7 +49,6 @@
 
 #include "renderer.hpp"
 
-extern bool vulkanIsExtensionSupported(uint32_t, const char* name);
 
 namespace meshlettest {
 int const SAMPLE_SIZE_WIDTH(1024);
@@ -52,21 +56,6 @@ int const SAMPLE_SIZE_HEIGHT(1024);
 int const SAMPLE_MAJOR_VERSION(4);
 int const SAMPLE_MINOR_VERSION(5);
 
-void setupVulkanContextInfo(nvvk::ContextCreateInfo& info)
-{
-  static VkPhysicalDeviceMeshShaderFeaturesNV meshFeatures = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV};
-  static VkPhysicalDeviceFloat16Int8FeaturesKHR float16int8Features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR};
-  info.apiMajor                                                     = 1;
-  info.apiMinor                                                     = 1;
-  info.compatibleDeviceIndex                                        = Resources::s_vkDevice;
-#if HAS_OPENGL
-  // not compatible with GL extension mechanism
-  info.removeInstanceLayer("VK_LAYER_KHRONOS_validation");
-#endif
-  info.addDeviceExtension(VK_NV_GLSL_SHADER_EXTENSION_NAME, true);  // flag optional, driver still supports it
-  info.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeatures);
-  info.addDeviceExtension(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME, true, &float16int8Features);
-}
 
 // used for loading viewpoint files and material filter files
 class SimpleParameterFile
@@ -160,9 +149,9 @@ public:
 };
 
 class Sample
-#if HAS_OPENGL
+#if IS_OPENGL
     : public nvgl::AppWindowProfilerGL
-#else
+#elif IS_VULKAN
     : public nvvk::AppWindowProfilerVK
 #endif
 
@@ -178,7 +167,9 @@ class Sample
 public:
   struct Tweak
   {
-    bool     useMeshShaderCull = false;
+    bool     usePrimitiveCull  = false;
+    bool     useVertexCull     = true;
+    bool     useFragBarycentrics = false;
     bool     useBackFaceCull   = true;
     bool     useClipping       = false;
     bool     animate           = false;
@@ -187,6 +178,7 @@ public:
     bool     showNormals       = false;
     bool     showCulled        = false;
     bool     useStats          = false;
+    bool     showPrimIDs       = false;
     float    fov               = 45.0f;
     float    pixelCull         = 0.5f;
     int      renderer          = 0;
@@ -201,6 +193,7 @@ public:
     uint32_t maxGroups         = -1;
     int32_t  indexThreshold    = 0;
     uint32_t minTaskMeshlets   = 16;
+    uint32_t numTaskMeshlets   = 32;
     vec3f    clipPosition      = vec3f(0.5f);
   };
 
@@ -214,6 +207,8 @@ public:
   bool             m_useUI = true;
   ImGuiH::Registry m_ui;
   double           m_uiTime = 0;
+
+  bool m_supportsFragBarycentrics = false;
 
   Tweak m_tweak;
   Tweak m_lastTweak;
@@ -264,9 +259,9 @@ public:
   std::string getShaderPrepend();
 
   Sample()
-#if HAS_OPENGL
+#if IS_OPENGL
       : AppWindowProfilerGL(false)
-#else
+#elif IS_VULKAN
       : AppWindowProfilerVK(false)
 #endif
   {
@@ -277,8 +272,17 @@ public:
     setVsync(false);
 #endif
 
-#if !HAS_OPENGL
-    setupVulkanContextInfo(m_contextInfo);
+#if IS_VULKAN
+    static VkPhysicalDeviceMeshShaderFeaturesNV meshFeatures = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV};
+    static VkPhysicalDeviceFloat16Int8FeaturesKHR float16int8Features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR};
+    static VkPhysicalDeviceFragmentShaderBarycentricFeaturesNV baryFeatures = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_NV};
+    m_contextInfo.apiMajor              = 1;
+    m_contextInfo.apiMinor              = 1;
+    m_contextInfo.compatibleDeviceIndex = Resources::s_vkDevice;
+    m_contextInfo.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeatures);
+    m_contextInfo.addDeviceExtension(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME, true, &float16int8Features);
+    m_contextInfo.addDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, true, &baryFeatures);
 #endif
   }
 
@@ -331,6 +335,20 @@ public:
 
     return ImGuiH::key_button(button, action, mods);
   }
+
+  template <typename T>
+  bool tweakChanged(const T& val) const
+  {
+    size_t offset = size_t(&val) - size_t(&m_tweak);
+    return memcmp(&val, reinterpret_cast<const uint8_t*>(&m_lastTweak) + offset, sizeof(T)) != 0;
+  }
+
+  template <typename T>
+  bool modelConfigChanged(const T& val) const
+  {
+    size_t offset = size_t(&val) - size_t(&m_modelConfig);
+    return memcmp(&val, reinterpret_cast<const uint8_t*>(&m_lastModelConfig) + offset, sizeof(T)) != 0;
+  }
 };
 
 std::string Sample::getShaderPrepend()
@@ -350,15 +368,17 @@ std::string Sample::getShaderPrepend()
 
   return prepend + nvh::stringFormat("#define NVMESHLET_VERTEX_COUNT %d\n", m_modelConfig.meshVertexCount)
          + nvh::stringFormat("#define NVMESHLET_PRIMITIVE_COUNT %d\n", m_modelConfig.meshPrimitiveCount)
-         + nvh::stringFormat("#define NVMESHLET_USE_PACKBASIC %d\n", m_modelConfig.meshBuilder == MESHLET_BUILDER_PACKBASIC ? 1 : 0)
-         + nvh::stringFormat("#define NVMESHLET_USE_ARRAYS %d\n", m_modelConfig.meshBuilder == MESHLET_BUILDER_ARRAYS ? 1 : 0)
+         + nvh::stringFormat("#define NVMESHLET_ENCODING %d\n", m_modelConfig.meshBuilder == MESHLET_BUILDER_PACKBASIC ? NVMESHLET_ENCODING_PACKBASIC : 0)
          + nvh::stringFormat("#define NVMESHLET_PRIMBITS %d\n",
                              NVMeshlet::findMSB(std::max(32u, m_modelConfig.meshVertexCount) - 1) + 1)
-         + nvh::stringFormat("#define EXTRA_ATTRIBUTES %d\n", m_modelConfig.extraAttributes)
-         + nvh::stringFormat("#define USE_MESH_SHADERCULL %d\n", m_tweak.useMeshShaderCull ? 1 : 0)
+         + nvh::stringFormat("#define NVMESHLET_PER_TASK %d\n", m_tweak.numTaskMeshlets)
+         + nvh::stringFormat("#define VERTEX_EXTRAS_COUNT %d\n", m_modelConfig.extraAttributes)
+         + nvh::stringFormat("#define USE_VERTEX_CULL %d\n", m_tweak.useVertexCull ? 1 : 0)
+         + nvh::stringFormat("#define USE_BARYCENTRIC_SHADING %d\n", m_tweak.useFragBarycentrics && m_supportsFragBarycentrics ? 1 : 0)
          + nvh::stringFormat("#define USE_BACKFACECULL %d\n", m_tweak.useBackFaceCull ? 1 : 0)
          + nvh::stringFormat("#define USE_CLIPPING %d\n", m_tweak.useClipping ? 1 : 0)
          + nvh::stringFormat("#define USE_STATS %d\n", m_tweak.useStats ? 1 : 0)
+         + nvh::stringFormat("#define SHOW_PRIMIDS %d\n", m_tweak.showPrimIDs ? 1 : 0)
          + nvh::stringFormat("#define SHOW_BOX %d\n", m_tweak.showBboxes ? 1 : 0)
          + nvh::stringFormat("#define SHOW_NORMAL %d\n", m_tweak.showNormals ? 1 : 0)
          + nvh::stringFormat("#define SHOW_CULLED %d\n", m_tweak.showCulled ? 1 : 0);
@@ -425,7 +445,7 @@ void Sample::deinitRenderer()
     m_resources->synchronize();
     m_renderer->deinit();
     delete m_renderer;
-    m_renderer = NULL;
+    m_renderer = nullptr;
   }
 }
 
@@ -446,9 +466,9 @@ void Sample::initRenderer(int typesort)
     m_resources->m_cullBackFace    = m_tweak.useBackFaceCull;
     m_resources->m_clipping        = m_tweak.useClipping;
     m_resources->m_extraAttributes = m_modelConfig.extraAttributes;
-#if HAS_OPENGL
+#if IS_OPENGL
     bool valid = m_resources->init(&m_contextWindow, &m_profiler);
-#else
+#elif IS_VULKAN
     bool valid = m_resources->init(&m_context, &m_swapChain, &m_profiler);
 #endif
     valid = valid
@@ -470,7 +490,8 @@ void Sample::initRenderer(int typesort)
     RenderList::Config config;
     config.objectFrom      = m_tweak.objectFrom;
     config.objectNum       = m_tweak.objectNum;
-    config.minTaskMeshlets = m_tweak.minTaskMeshlets;
+    config.taskMinMeshlets = m_tweak.minTaskMeshlets;
+    config.taskNumMeshlets = m_tweak.numTaskMeshlets;
     config.indexThreshold  = m_tweak.indexThreshold;
     config.strategy        = RenderList::STRATEGY_SINGLE;
 
@@ -478,6 +499,7 @@ void Sample::initRenderer(int typesort)
   }
   {
     Renderer::Config config;
+    config.useCulling = m_tweak.usePrimitiveCull;
 
     LOGI("renderer: %s\n", Renderer::getRegistry()[type]->name());
     m_renderer = Renderer::getRegistry()[type]->create();
@@ -527,13 +549,17 @@ void Sample::loadViewpoints()
 
 bool Sample::begin()
 {
-  Resources::s_vkMeshSupport = vulkanIsExtensionSupported(Resources::s_vkDevice, VK_NV_MESH_SHADER_EXTENSION_NAME);
+#if IS_OPENGL
+  m_supportsFragBarycentrics = has_GL_NV_fragment_shader_barycentric != 0;
+#elif IS_VULKAN
+  m_supportsFragBarycentrics = m_context.hasDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
+#endif
 
   m_profilerPrint = false;
   m_timeInTitle   = true;
 
-  m_renderer  = NULL;
-  m_resources = NULL;
+  m_renderer  = nullptr;
+  m_resources = nullptr;
 
   bool validated(true);
   validated = validated && initProgram();
@@ -544,7 +570,11 @@ bool Sample::begin()
   const Renderer::Registry registry = Renderer::getRegistry();
   for(size_t i = 0; i < registry.size(); i++)
   {
-    if(registry[i]->isAvailable())
+#if IS_OPENGL
+    if(registry[i]->isAvailable(&m_contextWindow))
+#elif IS_VULKAN
+    if(registry[i]->isAvailable(&m_context))
+#endif
     {
       uint sortkey = uint(i);
       sortkey |= registry[i]->priority() << 16;
@@ -643,15 +673,11 @@ void Sample::processUI(int width, int height, double time)
 
   ImGui::NewFrame();
   ImGui::SetNextWindowPos(ImVec2(5, 5));
-  ImGui::SetNextWindowSize(ImGuiH::dpiScaled(280, 0), ImGuiCond_FirstUseEver);
-  if(ImGui::Begin("NVIDIA " PROJECT_NAME, nullptr))
+  ImGui::SetNextWindowSize(ImGuiH::dpiScaled(290, 800), ImGuiCond_FirstUseEver);
+
+  if(ImGui::Begin("NVIDIA " EXE_NAME, nullptr))
   {
     ImGui::PushItemWidth(ImGuiH::dpiScaled(120));
-#if HAS_OPENGL
-    ImGui::Text("gl and vk version");
-#else
-    ImGui::Text("vk only version");
-#endif
     ImGui::Separator();
     if(!m_messageString.empty())
     {
@@ -659,38 +685,43 @@ void Sample::processUI(int width, int height, double time)
       ImGui::Separator();
     }
 
-
     m_ui.enumCombobox(GUI_RENDERER, "renderer", &m_tweak.renderer);
     m_ui.enumCombobox(GUI_VIEWPOINT, "viewpoint", &m_tweak.viewPoint);
-    ImGuiH::InputIntClamped("min. task meshlets", &m_tweak.minTaskMeshlets, 0, 256, 1, 16, ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::Checkbox("(mesh) colorize by meshlet", &m_tweak.colorize);
-    ImGui::Checkbox("use backface culling ", &m_tweak.useBackFaceCull);
-    ImGui::Checkbox("show meshlet bboxes", &m_tweak.showBboxes);
-    ImGui::Checkbox("show meshlet normals", &m_tweak.showNormals);
-    ImGui::Checkbox("(show) culled", &m_tweak.showCulled);
-    //ImGui::Checkbox("animate", &m_tweak.animate);
     ImGui::SliderFloat("fov", &m_tweak.fov, 1, 120, "%.0f");
-    ImGui::Separator();
-    ImGui::Checkbox("(mesh) use per-primitive culling ", &m_tweak.useMeshShaderCull);
-    ImGui::Checkbox("use clipping planes", &m_tweak.useClipping);
-    ImGui::SliderFloat3("clip position", m_tweak.clipPosition.vec_array, 0.01f, 1.01, "%.2f");
-    ImGui::SliderFloat("(task) pixel cull", &m_tweak.pixelCull, 0.0f, 1.0f, "%.2f");
+    if(ImGui::CollapsingHeader("Mesh Shading Settings", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      ImGuiH::InputIntClamped("meshlet vertices", &m_modelConfig.meshVertexCount, 32, 256, 32, 32, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGuiH::InputIntClamped("meshlet primitives", &m_modelConfig.meshPrimitiveCount, 32, 256, 32, 32,
+                              ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGui::Checkbox("(mesh) colorize by meshlet", &m_tweak.colorize);
+      ImGuiH::InputIntClamped("task meshlet count", &m_tweak.numTaskMeshlets, 0, 128, 1, 16, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGuiH::InputIntClamped("task min. meshlets\n0 disables task stage", &m_tweak.minTaskMeshlets, 0, 256, 1, 16, ImGuiInputTextFlags_EnterReturnsTrue);
+      ImGui::SliderFloat("(task) pixel cull", &m_tweak.pixelCull, 0.0f, 1.0f, "%.2f");
+      ImGui::Checkbox("(mesh) use per-primitive culling ", &m_tweak.usePrimitiveCull);
+      ImGui::Checkbox("- also use per-vertex culling", &m_tweak.useVertexCull);
+      if(m_supportsFragBarycentrics)
+      {
+        ImGui::Checkbox("(mesh) use fragment barycentrics ", &m_tweak.useFragBarycentrics);
+      }
+    }
+    if(ImGui::CollapsingHeader("Render Settings"))
+    {
+      ImGui::Checkbox("show primitive ids", &m_tweak.showPrimIDs);
+      ImGui::Checkbox("show meshlet bboxes", &m_tweak.showBboxes);
+      ImGui::Checkbox("show meshlet normals", &m_tweak.showNormals);
+      ImGui::Checkbox("- culled bboxes/normals", &m_tweak.showCulled);
+      ImGui::NewLine();
+      ImGui::Checkbox("use backface culling ", &m_tweak.useBackFaceCull);
+      ImGui::Checkbox("use clipping planes", &m_tweak.useClipping);
+      ImGui::SliderFloat3("clip position", m_tweak.clipPosition.vec_array, 0.01f, 1.01, "%.2f");
+
 #if 0
       ImGui::Separator();
       ImGuiH::InputIntClamped("objectFrom", &m_tweak.objectFrom, 0, (int)m_scene.m_objects.size()-1);
       ImGuiH::InputIntClamped("objectNum", &m_tweak.objectNum, 0, (int)m_scene.m_objects.size());
       ImGui::InputInt("indexThreshold", &m_tweak.indexThreshold);
 #endif
-    ImGui::Separator();
-    ImGuiH::InputIntClamped("meshlet vertices", &m_modelConfig.meshVertexCount, 32, 256, 32, 32, ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGuiH::InputIntClamped("meshlet primitives", &m_modelConfig.meshPrimitiveCount, 32, 256, 32, 32,
-                            ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGuiH::InputIntClamped("extra v4 attributes", &m_modelConfig.extraAttributes, 0, 7);
-    ImGui::Checkbox("model fp16 attributes", &m_modelConfig.fp16);
-    ImGuiH::InputIntClamped("model copies", &m_tweak.copies, 1, 256, 1, 10, ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::Separator();
-    m_ui.enumCombobox(GUI_SUPERSAMPLE, "superresolution", &m_tweak.supersample);
-    ImGui::Separator();
+    }
 
     {
       int avg = 50;
@@ -723,14 +754,17 @@ void Sample::processUI(int width, int height, double time)
       m_frames++;
 
       float gpuTimeF = float(m_statsGpuTime);
-      ImGui::Text("         Render GPU [ms]: %2.3f", gpuTimeF / 1000.0f);
-      ImGui::Text("Original Index Size [MB]: %4zu", m_scene.m_iboSize / (1024 * 1024));
-      ImGui::Text("       Meshlet Size [MB]: %4zu", m_scene.m_meshSize / (1024 * 1024));
+      if(ImGui::CollapsingHeader("Basic Stats", ImGuiTreeNodeFlags_DefaultOpen))
+      {
+        ImGui::Text("         Render GPU [ms]: %2.3f", gpuTimeF / 1000.0f);
+        ImGui::Text("Original Index Size [MB]: %4zu", m_scene.m_iboSize / (1024 * 1024));
+        ImGui::Text("       Meshlet Size [MB]: %4zu", m_scene.m_meshSize / (1024 * 1024));
+      }
     }
-    ImGui::Checkbox("generate stats", &m_tweak.useStats);
+
+    m_tweak.useStats = ImGui::CollapsingHeader("Detailed Stats (costs perf)");
     if(m_tweak.useStats)
     {
-      ImGui::Separator();
       CullStats stats;
       m_resources->getStats(stats);
       ImGui::Text("task total:  %9d", stats.tasksInput);
@@ -743,7 +777,18 @@ void Sample::processUI(int width, int height, double time)
       ImGui::Text("vert input:  %9d", stats.attrInput);
       ImGui::Text("attr read:   %9d - %2.1f", stats.attrOutput, double(stats.attrOutput) / double(stats.attrInput) * 100);
     }
-    //m_ui.enumCombobox(GUI_MSAA, "msaa", &m_tweak.msaa);
+
+    if(ImGui::CollapsingHeader("Model Settings"))
+    {
+      ImGui::Checkbox("use fp16 vtx attribs", &m_modelConfig.fp16);
+      ImGuiH::InputIntClamped("extra vec4 attribs", &m_modelConfig.extraAttributes, 0, 7);
+      ImGuiH::InputIntClamped("model copies", &m_tweak.copies, 1, 256, 1, 10, ImGuiInputTextFlags_EnterReturnsTrue);
+    }
+
+    if(ImGui::CollapsingHeader("Misc"))
+    {
+      m_ui.enumCombobox(GUI_SUPERSAMPLE, "super resolution", &m_tweak.supersample);
+    }
   }
   ImGui::End();
 }
@@ -763,13 +808,14 @@ void Sample::think(double time)
                            nvmath::vec2f(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]),
                            m_windowState.m_mouseButtonFlags, m_windowState.m_mouseWheel);
 
-  if(m_windowState.onPress(KEY_R) || m_tweak.useBackFaceCull != m_lastTweak.useBackFaceCull
-     || m_tweak.useMeshShaderCull != m_lastTweak.useMeshShaderCull || m_tweak.useClipping != m_lastTweak.useClipping
-     || m_tweak.useStats != m_lastTweak.useStats || m_modelConfig.extraAttributes != m_lastModelConfig.extraAttributes
-     || m_modelConfig.meshPrimitiveCount != m_lastModelConfig.meshPrimitiveCount
-     || m_modelConfig.meshVertexCount != m_lastModelConfig.meshVertexCount || m_shaderprepend != m_lastShaderPrepend
-     || m_tweak.showBboxes != m_lastTweak.showBboxes || m_tweak.showNormals != m_lastTweak.showNormals
-     || m_tweak.showCulled != m_lastTweak.showCulled)
+
+  // trigger recompile of shaders
+  if(m_windowState.onPress(KEY_R) || tweakChanged(m_tweak.useBackFaceCull) || tweakChanged(m_tweak.useClipping)
+     || tweakChanged(m_tweak.useStats) || tweakChanged(m_tweak.showBboxes) || tweakChanged(m_tweak.showNormals)
+     || tweakChanged(m_tweak.showCulled) || tweakChanged(m_tweak.showPrimIDs) || tweakChanged(m_tweak.numTaskMeshlets)
+     || tweakChanged(m_tweak.useFragBarycentrics) || tweakChanged(m_tweak.useVertexCull)
+     || modelConfigChanged(m_modelConfig.extraAttributes) || modelConfigChanged(m_modelConfig.meshPrimitiveCount)
+     || modelConfigChanged(m_modelConfig.meshVertexCount) || m_shaderprepend != m_lastShaderPrepend)
   {
     m_resources->synchronize();
     m_resources->m_cullBackFace = m_tweak.useBackFaceCull;
@@ -781,16 +827,15 @@ void Sample::think(double time)
     saveViewpoint();
   }
 
-  if(m_tweak.supersample != m_lastTweak.supersample || getVsync() != m_lastVsync)
+  if(tweakChanged(m_tweak.supersample) || getVsync() != m_lastVsync)
   {
     m_lastVsync = getVsync();
     m_resources->initFramebuffer(width, height, m_tweak.supersample, getVsync());
   }
 
   bool sceneChanged = false;
-  if(m_tweak.copies != m_lastTweak.copies || m_tweak.cloneaxisX != m_lastTweak.cloneaxisX
-     || m_tweak.cloneaxisY != m_lastTweak.cloneaxisY || m_tweak.cloneaxisZ != m_lastTweak.cloneaxisZ
-     || memcmp(&m_modelConfig, &m_lastModelConfig, sizeof(m_modelConfig)))
+  if(tweakChanged(m_tweak.copies) || tweakChanged(m_tweak.cloneaxisX) || tweakChanged(m_tweak.cloneaxisY)
+     || tweakChanged(m_tweak.cloneaxisZ) || memcmp(&m_modelConfig, &m_lastModelConfig, sizeof(m_modelConfig)))
   {
     sceneChanged = true;
     m_resources->synchronize();
@@ -801,16 +846,16 @@ void Sample::think(double time)
     m_resources->initScene(m_scene);
   }
 
-  if(sceneChanged || m_tweak.renderer != m_lastTweak.renderer || m_tweak.objectFrom != m_lastTweak.objectFrom
-     || m_tweak.objectNum != m_lastTweak.objectNum || m_tweak.useClipping != m_lastTweak.useClipping
-     || m_tweak.useStats != m_lastTweak.useStats || m_tweak.maxGroups != m_lastTweak.maxGroups
-     || m_tweak.indexThreshold != m_lastTweak.indexThreshold || m_tweak.minTaskMeshlets != m_lastTweak.minTaskMeshlets)
+  if(sceneChanged || tweakChanged(m_tweak.renderer) || tweakChanged(m_tweak.objectFrom)
+     || tweakChanged(m_tweak.objectNum) || tweakChanged(m_tweak.useClipping) || tweakChanged(m_tweak.useStats)
+     || tweakChanged(m_tweak.maxGroups) || tweakChanged(m_tweak.indexThreshold) || tweakChanged(m_tweak.minTaskMeshlets)
+     || tweakChanged(m_tweak.usePrimitiveCull) || tweakChanged(m_tweak.numTaskMeshlets))
   {
     m_resources->synchronize();
     initRenderer(m_tweak.renderer);
   }
 
-  if(m_tweak.viewPoint != m_lastTweak.viewPoint)
+  if(tweakChanged(m_tweak.viewPoint))
   {
     m_control.m_viewMatrix = m_viewPoints[m_tweak.viewPoint].mat;
   }
@@ -851,7 +896,6 @@ void Sample::think(double time)
     sceneUbo.viewMatrixIT   = nvmath::transpose(viewI);
 
     sceneUbo.viewPos = sceneUbo.viewMatrixIT.row(3);
-    ;
     sceneUbo.viewDir = -view.row(2);
 
     sceneUbo.wLightPos   = sceneUbo.viewMatrixIT.row(3);
@@ -1013,12 +1057,17 @@ void Sample::setupConfigParameters()
   m_parameterList.add("shaderprepend", &m_shaderprepend);
 
   m_parameterList.add("meshlet", &m_modelConfig.meshVertexCount, nullptr, 2);
-  m_parameterList.add("meshshadercull", &m_tweak.useMeshShaderCull);
+  m_parameterList.add("primitivecull", &m_tweak.usePrimitiveCull);
+  m_parameterList.add("vertexcull", &m_tweak.useVertexCull);
   m_parameterList.add("backfacecull", &m_tweak.useBackFaceCull);
 
   m_parameterList.add("showbbox", &m_tweak.showBboxes);
   m_parameterList.add("shownormals", &m_tweak.showNormals);
   m_parameterList.add("showculled", &m_tweak.showCulled);
+
+  m_parameterList.add("fragbarycentrics", &m_tweak.useFragBarycentrics);
+
+  m_parameterList.add("primids", &m_tweak.showPrimIDs);
 
   m_parameterList.add("stats", &m_tweak.useStats);
 
@@ -1079,11 +1128,11 @@ using namespace meshlettest;
 
 int main(int argc, const char** argv)
 {
-  NVPSystem system(PROJECT_NAME);
+  NVPSystem system(EXE_NAME);
 
   omp_set_num_threads(std::thread::hardware_concurrency());
 
   Sample sample;
 
-  return sample.run(PROJECT_NAME, argc, argv, SAMPLE_SIZE_WIDTH, SAMPLE_SIZE_HEIGHT);
+  return sample.run(EXE_NAME, argc, argv, SAMPLE_SIZE_WIDTH, SAMPLE_SIZE_HEIGHT);
 }

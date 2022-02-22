@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -24,12 +24,13 @@
 #include <nvgl/glsltypes_gl.hpp>
 #include <nvh/profiler.hpp>
 #include <platform.h>
-#if HAS_OPENGL
+#if IS_OPENGL
 #include <nvgl/contextwindow_gl.hpp>
-#else
+#elif IS_VULKAN
 #include <nvvk/context_vk.hpp>
 #include <nvvk/swapchain_vk.hpp>
 #endif
+
 
 #include <algorithm>
 
@@ -56,7 +57,6 @@ struct FrameConfig
 class Resources
 {
 public:
-  static bool     s_vkMeshSupport;
   static uint32_t s_vkDevice;
   static uint32_t s_glDevice;
 
@@ -77,10 +77,10 @@ public:
   virtual void synchronize() {}
 
   // Can't virtualize it anymore :-(
-#if HAS_OPENGL
-  virtual bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler) { return false; }
-#else
-  virtual bool init(nvvk::Context* deviceInstance, nvvk::SwapChain* swapChain, nvh::Profiler* profiler)
+#if IS_OPENGL
+  virtual bool init(const nvgl::ContextWindow* window, nvh::Profiler* profiler) { return false; }
+#elif IS_VULKAN
+  virtual bool init(const nvvk::Context* context, const nvvk::SwapChain* swapChain, nvh::Profiler* profiler)
   {
     return false;
   }

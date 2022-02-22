@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
-
 
 
 #pragma once
@@ -96,27 +95,27 @@ public:
   {
     nvvk::ShaderModuleID object_vertex;
     nvvk::ShaderModuleID object_fragment;
+
+    nvvk::ShaderModuleID object_task;
+
+    nvvk::ShaderModuleID object_mesh_fragment;
     nvvk::ShaderModuleID object_mesh;
     nvvk::ShaderModuleID object_task_mesh;
-    nvvk::ShaderModuleID object_task;
+    nvvk::ShaderModuleID object_cull_mesh;
+    nvvk::ShaderModuleID object_cull_task_mesh;
+
     nvvk::ShaderModuleID bbox_vertex;
     nvvk::ShaderModuleID bbox_geometry;
     nvvk::ShaderModuleID bbox_fragment;
   };
 
-  enum DrawMode
-  {
-    MODE_REGULAR,
-    MODE_BBOX,
-    MODE_MESH,
-    MODE_TASK_MESH,
-    NUM_MODES,
-  };
-
   struct DrawSetup
   {
-    VkPipeline                                pipeline       = VK_NULL_HANDLE;
-    VkPipeline                                pipelineNoTask = VK_NULL_HANDLE;
+    VkPipeline pipeline     = VK_NULL_HANDLE;
+    VkPipeline pipelineTask = VK_NULL_HANDLE;
+
+    VkPipeline                                pipelineCull     = VK_NULL_HANDLE;
+    VkPipeline                                pipelineCullTask = VK_NULL_HANDLE;
     nvvk::TDescriptorSetContainer<DSET_COUNT> container;
   };
 
@@ -127,20 +126,13 @@ public:
   nvvk::ShaderModuleManager m_shaderManager;
   ShaderModuleIDs           m_shaders;
 
-#if HAS_OPENGL
-  //nvvk::Context m_ctxContent;
-  VkSemaphore   m_semImageWritten;
-  VkSemaphore   m_semImageRead;
-  nvvk::Context m_contextInstance;
-#else
   const nvvk::SwapChain* m_swapChain;
-#endif
-  nvvk::Context* m_context = nullptr;
+  const nvvk::Context*   m_context = nullptr;
 
-  VkDevice                     m_device    = VK_NULL_HANDLE;
-  VkPhysicalDevice             m_physical;
-  VkQueue                      m_queue;
-  uint32_t                     m_queueFamily;
+  VkDevice         m_device = VK_NULL_HANDLE;
+  VkPhysicalDevice m_physical;
+  VkQueue          m_queue;
+  uint32_t         m_queueFamily;
 
   nvvk::DeviceMemoryAllocator m_memAllocator;
   nvvk::RingFences            m_ringFences;
@@ -173,12 +165,10 @@ public:
   }
   static bool isAvailable();
 
-#if HAS_OPENGL
-  bool init(nvgl::ContextWindow* window, nvh::Profiler* profiler) override;
-#else
-  bool init(nvvk::Context* context, nvvk::SwapChain* swapChain, nvh::Profiler* profiler) override;
-#endif
+  bool init(const nvvk::Context* context, const nvvk::SwapChain* swapChain, nvh::Profiler* profiler) override;
   void deinit() override;
+
+  void initPipeLayouts();
 
   void initPipes();
   void deinitPipes();
@@ -221,7 +211,7 @@ public:
   void submissionEnqueue(VkCommandBuffer cmdbuffer) { m_submission.enqueue(cmdbuffer); }
   void submissionEnqueue(uint32_t num, const VkCommandBuffer* cmdbuffers) { m_submission.enqueue(num, cmdbuffers); }
   // perform queue submit
-  void submissionExecute(VkFence fence = NULL, bool useImageReadWait = false, bool useImageWriteSignals = false);
+  void submissionExecute(VkFence fence = VK_NULL_HANDLE, bool useImageReadWait = false, bool useImageWriteSignals = false);
 
   // synchronizes to queue
   void resetTempResources();

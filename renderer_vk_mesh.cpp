@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
-#include "nvmeshlet_array.hpp"
+#include "nvmeshlet_builder.hpp"
 #include "renderer.hpp"
 #include "resources_vk.hpp"
 #include <algorithm>
@@ -40,7 +40,7 @@ class RendererMeshVK : public Renderer
 public:
   class TypeCmd : public Renderer::Type
   {
-    bool        isAvailable() const { return ResourcesVK::isAvailable() && Resources::s_vkMeshSupport; }
+    bool        isAvailable(const nvvk::Context* context) const { return ResourcesVK::isAvailable() && context->hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME); }
     const char* name() const { return "VK mesh"; }
     Renderer*   create() const
     {
@@ -90,9 +90,11 @@ private:
     int  lastGeometry = -1;
     int  lastMatrix   = -1;
     int  lastChunk    = -1;
-    bool lastShorts   = false;
+
     bool lastTask     = true;
-    ;
+
+    VkPipeline pipeline = m_config.useCulling ? setup.pipelineCull : setup.pipeline;
+    VkPipeline pipelineTask = m_config.useCulling ? setup.pipelineCullTask : setup.pipelineTask;
 
     uint32_t psoStats = 0;
 
@@ -104,7 +106,7 @@ private:
       bool useTask = di.task;
       if(first || useTask != lastTask)
       {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, useTask ? setup.pipeline : setup.pipelineNoTask);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, useTask ? pipelineTask : pipeline);
 
         if(first)
         {
@@ -123,30 +125,22 @@ private:
         const CadSceneVK::Geometry& geo   = sceneVK.m_geometry[di.geometryIndex];
         int                         chunk = int(geo.allocation.chunkIndex);
 
-#if USE_PER_GEOMETRY_VIEWS
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_GEOMETRY, 1,
-                                setup.container.at(DSET_GEOMETRY).getSets() + di.geometryIndex, 0, nullptr);
-#else
-        if(chunk != lastChunk || di.shorts != lastShorts)
+        if(chunk != lastChunk)
         {
-          int idx = chunk * 2 + (di.shorts ? 1 : 0);
           vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_GEOMETRY,
-                                  1, setup.container.at(DSET_GEOMETRY).getSets() + idx, 0, nullptr);
+                                  1, setup.container.at(DSET_GEOMETRY).getSets() + chunk, 0, nullptr);
 
           lastChunk  = chunk;
-          lastShorts = di.shorts;
         }
 
         // we use the same vertex offset for both vbo and abo, our allocator should ensure this condition.
         assert(uint32_t(geo.vbo.offset / vertexSize) == uint32_t(geo.abo.offset / vertexAttributeSize));
 
         uint32_t offsets[4] = {uint32_t(geo.meshletDesc.offset / sizeof(NVMeshlet::MeshletDesc)),
-                               uint32_t(geo.meshletPrim.offset),
-                               uint32_t(geo.meshletVert.offset / (di.shorts ? 2 : 4)), uint32_t(geo.vbo.offset / vertexSize)};
+                               uint32_t(geo.meshletPrim.offset), 0, uint32_t(geo.vbo.offset / vertexSize)};
 
         vkCmdPushConstants(cmd, setup.container.getPipeLayout(),
                            VK_SHADER_STAGE_TASK_BIT_NV | VK_SHADER_STAGE_MESH_BIT_NV, 0, sizeof(offsets), offsets);
-#endif
 
         lastGeometry = di.geometryIndex;
       }
@@ -167,10 +161,10 @@ private:
         assigns.z = 0;
         assigns.w = 0;
         vkCmdPushConstants(cmd, setup.container.getPipeLayout(), VK_SHADER_STAGE_TASK_BIT_NV,
-                           USE_PER_GEOMETRY_VIEWS ? 0 : sizeof(uint32_t) * 4, sizeof(assigns), &assigns);
+                           sizeof(uint32_t) * 4, sizeof(assigns), &assigns);
       }
 
-      uint32_t count  = useTask ? NVMeshlet::computeTasksCount(di.meshlet.count) : di.meshlet.count;
+      uint32_t count  = useTask ? ((di.meshlet.count + m_list->m_config.taskNumMeshlets - 1) / m_list->m_config.taskNumMeshlets) : di.meshlet.count;
       uint32_t offset = useTask ? 0 : di.meshlet.offset;
       vkCmdDrawMeshTasksNV(cmd, count, offset);
     }
@@ -204,7 +198,7 @@ bool RendererMeshVK::init(RenderList* NV_RESTRICT list, Resources* resources, co
   VkResult                result;
   VkCommandPoolCreateInfo cmdPoolInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   cmdPoolInfo.queueFamilyIndex        = 0;
-  result                              = vkCreateCommandPool(m_resources->m_device, &cmdPoolInfo, NULL, &m_cmdPool);
+  result                              = vkCreateCommandPool(m_resources->m_device, &cmdPoolInfo, nullptr, &m_cmdPool);
   assert(result == VK_SUCCESS);
 
   GenerateCmdBuffers();
@@ -215,7 +209,7 @@ bool RendererMeshVK::init(RenderList* NV_RESTRICT list, Resources* resources, co
 void RendererMeshVK::deinit()
 {
   DeleteCmdbuffers();
-  vkDestroyCommandPool(m_resources->m_device, m_cmdPool, NULL);
+  vkDestroyCommandPool(m_resources->m_device, m_cmdPool, nullptr);
 }
 
 void RendererMeshVK::draw(const FrameConfig& global)

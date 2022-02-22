@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -38,7 +38,7 @@ class RendererVK : public Renderer
 public:
   class TypeCmd : public Renderer::Type
   {
-    bool        isAvailable() const { return ResourcesVK::isAvailable(); }
+    bool        isAvailable(const nvvk::Context* context) const { return ResourcesVK::isAvailable(); }
     const char* name() const { return "VK standard"; }
     Renderer*   create() const
     {
@@ -99,7 +99,7 @@ private:
         if(first)
         {
           vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_SCENE, 1,
-                                  setup.container.at(DSET_SCENE).getSets(), 0, NULL);
+                                  setup.container.at(DSET_SCENE).getSets(), 0, nullptr);
         }
 
         first = false;
@@ -156,7 +156,7 @@ bool RendererVK::init(RenderList* NV_RESTRICT list, Resources* resources, const 
   VkResult                result;
   VkCommandPoolCreateInfo cmdPoolInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   cmdPoolInfo.queueFamilyIndex        = 0;
-  result                              = vkCreateCommandPool(m_resources->m_device, &cmdPoolInfo, NULL, &m_cmdPool);
+  result                              = vkCreateCommandPool(m_resources->m_device, &cmdPoolInfo, nullptr, &m_cmdPool);
   assert(result == VK_SUCCESS);
 
   GenerateCmdBuffers();
@@ -167,7 +167,7 @@ bool RendererVK::init(RenderList* NV_RESTRICT list, Resources* resources, const 
 void RendererVK::deinit()
 {
   DeleteCmdbuffers();
-  vkDestroyCommandPool(m_resources->m_device, m_cmdPool, NULL);
+  vkDestroyCommandPool(m_resources->m_device, m_cmdPool, nullptr);
 }
 
 void RendererVK::draw(const FrameConfig& global)

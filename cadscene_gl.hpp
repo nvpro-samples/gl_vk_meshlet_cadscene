@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -50,8 +50,6 @@ public:
 
     GLuint vboTEX;
     GLuint aboTEX;
-    GLuint meshVertex32TEX;
-    GLuint meshVertex16TEX;
 
     size_t vboSize;
     size_t aboSize;
@@ -67,8 +65,6 @@ public:
 
     uint64_t vboTEXADDR;
     uint64_t aboTEXADDR;
-    uint64_t meshVertex32TEXADDR;
-    uint64_t meshVertex16TEXADDR;
   };
 
   void init(size_t vboStride, size_t aboStride, size_t maxChunk, bool bindless, bool fp16);
@@ -157,13 +153,6 @@ public:
 
     nvgl::BufferBinding topoMeshlet;
     nvgl::BufferBinding topoPrim;
-    nvgl::BufferBinding topoVert;
-
-#if USE_PER_GEOMETRY_VIEWS
-    nvgl::TextureBuffer vboTEX;
-    nvgl::TextureBuffer aboTEX;
-    nvgl::TextureBuffer vertTEX;
-#endif
   };
 
   struct GeometryUbo

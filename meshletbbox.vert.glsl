@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
 #version 450
 
+#ifdef VULKAN 
 #extension GL_GOOGLE_include_directive : enable
+#else
 #extension GL_ARB_shading_language_include : enable
+#endif
+
+#include "config.h"
 
 #if !IS_VULKAN
   #extension GL_NV_gpu_shader5 : require
@@ -34,13 +39,9 @@
 
 #if IS_VULKAN
 
-  #if USE_PER_GEOMETRY_VIEWS
-    uvec4 geometryOffsets = uvec4(0, 0, 0, 0);
-  #else
-    layout(push_constant) uniform pushConstant{
-      uvec4     geometryOffsets;
-    };
-  #endif
+  layout(push_constant) uniform pushConstant{
+    uvec4     geometryOffsets;
+  };
 
   layout(std140, binding = SCENE_UBO_VIEW, set = DSET_SCENE) uniform sceneBuffer {
     SceneData scene;
@@ -57,18 +58,13 @@
     uvec2 primIndices[];
   };
 
-  layout(binding=GEOMETRY_TEX_IBO,  set=DSET_GEOMETRY)  uniform usamplerBuffer texIbo;
   layout(binding=GEOMETRY_TEX_VBO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texVbo;
   layout(binding=GEOMETRY_TEX_ABO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texAbo;
 
 #else
 
-  #if USE_PER_GEOMETRY_VIEWS
-    uvec4 geometryOffsets = uvec4(0,0,0,0);
-  #else
-    layout(location = 0) uniform uvec4 geometryOffsets;
-    // x: mesh, y: prim, z: index, w: vertex
-  #endif
+  layout(location = 0) uniform uvec4 geometryOffsets;
+  // x: mesh, y: prim, z: index, w: vertex
 
   layout(std140, binding = UBO_SCENE_VIEW) uniform sceneBuffer {
     SceneData scene;
@@ -82,7 +78,6 @@
   layout(std140, binding = UBO_GEOMETRY) uniform geometryBuffer{
     uvec4*          meshletDescs;
     uvec2*          primIndices;
-    usamplerBuffer  texIbo;
     samplerBuffer   texVbo;
     samplerBuffer   texAbo;
   };

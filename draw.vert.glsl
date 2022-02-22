@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
 #version 450
-/**/
 
-#extension GL_ARB_shading_language_include : enable
+#ifdef VULKAN 
+  #extension GL_GOOGLE_include_directive : enable
+  #extension GL_EXT_control_flow_attributes: require
+  #define UNROLL_LOOP [[unroll]]
+#else
+  #extension GL_ARB_shading_language_include : enable
+  #pragma optionNV(unroll all)  
+  #define UNROLL_LOOP
+#endif
+
 #include "common.h"
 
 //////////////////////////////////////////////////
@@ -54,24 +62,31 @@
 
 in layout(location=VERTEX_POS)      vec3 oPos;
 in layout(location=VERTEX_NORMAL)   vec3 oNormal;
-#if EXTRA_ATTRIBUTES
-in layout(location=VERTEX_XTRA)     vec4 xtra[EXTRA_ATTRIBUTES];
+#if VERTEX_EXTRAS_COUNT
+in layout(location=VERTEX_EXTRAS)   vec4 xtra[VERTEX_EXTRAS_COUNT];
 #endif
 
 //////////////////////////////////////////////////
 // OUTPUT
 
-layout(location=0) out Interpolants {
-  vec3  wPos;
-  float dummy;
-  vec3  wNormal;
-  flat uint meshletID;
-#if EXTRA_ATTRIBUTES
-  vec4 xtra[EXTRA_ATTRIBUTES];
-#endif
+#if SHOW_PRIMIDS
+
+  // nothing to output
+  
+#else
+
+  layout(location=0) out Interpolants {
+    vec3  wPos;    
+    vec3  wNormal;
+    flat uint meshletID;
+  #if VERTEX_EXTRAS_COUNT
+    vec4 xtra[VERTEX_EXTRAS_COUNT];
+  #endif
 } OUT;
 
-#if IS_VULKAN
+#endif
+
+#if IS_VULKAN && USE_CLIPPING
 out float gl_ClipDistance[NUM_CLIPPING_PLANES];
 #endif
 
@@ -82,8 +97,7 @@ void main()
 {
   vec3 wPos     = (object.worldMatrix  * vec4(oPos,1)).xyz;
   gl_Position   = (scene.viewProjMatrix * vec4(wPos,1));
-  OUT.wPos      = wPos;
-  OUT.dummy     = 0.0;
+
   
 #if USE_CLIPPING
   for (int i = 0; i < NUM_CLIPPING_PLANES; i++){
@@ -91,12 +105,16 @@ void main()
   }
 #endif
   
+#if !SHOW_PRIMIDS
   vec3 wNormal  = mat3(object.worldMatrixIT) * oNormal;
   OUT.wNormal = wNormal;
-  OUT.meshletID = 0;
-#if EXTRA_ATTRIBUTES
-  for (int i = 0; i < EXTRA_ATTRIBUTES; i++){
-    OUT.xtra[i] = xtra[i];
-  }
+  OUT.meshletID = 0; 
+  OUT.wPos      = wPos;
+  #if VERTEX_EXTRAS_COUNT
+    UNROLL_LOOP
+    for (int i = 0; i < VERTEX_EXTRAS_COUNT; i++){
+      OUT.xtra[i] = xtra[i];
+    }
+  #endif
 #endif
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -37,7 +37,7 @@ class RendererGL : public Renderer
 public:
   class Type : public Renderer::Type
   {
-    bool        isAvailable() const { return true; }
+    bool        isAvailable(const nvgl::ContextWindow* contextWindow) const { return true; }
     const char* name() const { return "GL standard"; }
     Renderer*   create() const
     {
@@ -51,7 +51,7 @@ public:
   };
   class TypeVbum : public Renderer::Type
   {
-    bool isAvailable() const
+    bool isAvailable(const nvgl::ContextWindow* contextWindow) const
     {
       return has_GL_NV_vertex_buffer_unified_memory && has_GL_NV_uniform_buffer_unified_memory;
     }

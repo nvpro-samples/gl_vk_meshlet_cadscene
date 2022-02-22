@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
-#include "nvmeshlet_array.hpp"
+#include "nvmeshlet_packbasic.hpp"
 
 #include "cadscene_vk.hpp"
 
@@ -84,8 +84,6 @@ void GeometryMemoryVK::deinit()
 
     vkDestroyBufferView(m_device, chunk.vboView, nullptr);
     vkDestroyBufferView(m_device, chunk.aboView, nullptr);
-    vkDestroyBufferView(m_device, chunk.vert16View, nullptr);
-    vkDestroyBufferView(m_device, chunk.vert32View, nullptr);
 
     vkDestroyBuffer(m_device, chunk.vbo, nullptr);
     vkDestroyBuffer(m_device, chunk.abo, nullptr);
@@ -152,7 +150,7 @@ void GeometryMemoryVK::finalize()
   Chunk& chunk = getActiveChunk();
 
   // safety padding and ensure we always have all buffers (waste a bit of memory)
-  chunk.meshSize += sizeof(NVMeshlet::MeshletDesc) * NVMeshlet::MESHLETS_PER_TASK;
+  chunk.meshSize = std::max(chunk.meshSize, VkDeviceSize(16));
   chunk.meshIndicesSize += 16;
 
   VkBufferUsageFlags flags = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
@@ -165,10 +163,7 @@ void GeometryMemoryVK::finalize()
 
   chunk.meshInfo        = {chunk.mesh, 0, chunk.meshSize};
   chunk.meshIndicesInfo = {chunk.meshIndices, 0, chunk.meshIndicesSize};
-  chunk.vert16View = nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.meshIndices, VK_FORMAT_R16_UINT,
-                                                                                     chunk.meshIndicesSize));
-  chunk.vert32View = nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.meshIndices, VK_FORMAT_R32_UINT,
-                                                                                     chunk.meshIndicesSize));
+
   chunk.vboView =
       nvvk::createBufferView(m_device, nvvk::makeBufferViewCreateInfo(chunk.vbo, m_fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT,
                                                                       chunk.vboSize));
@@ -249,35 +244,11 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
       geom.meshletDesc.offset = geom.allocation.meshOffset;
       geom.meshletDesc.range  = cadgeom.meshlet.descSize;
       staging.upload(geom.meshletDesc, cadgeom.meshlet.descData);
-      // safety pad for potential out of memory access in task shader
-      geom.meshletDesc.range += sizeof(NVMeshlet::MeshletDesc) * NVMeshlet::MESHLETS_PER_TASK;
 
       geom.meshletPrim.buffer = chunk.meshIndices;
       geom.meshletPrim.offset = geom.allocation.meshIndicesOffset;
       geom.meshletPrim.range  = cadgeom.meshlet.primSize;
       staging.upload(geom.meshletPrim, cadgeom.meshlet.primData);
-
-      geom.meshletVert.buffer = chunk.meshIndices;
-      geom.meshletVert.offset = geom.allocation.meshIndicesOffset + NVMeshlet::arrayIndicesAlignedSize(cadgeom.meshlet.primSize);
-      geom.meshletVert.range = cadgeom.meshlet.vertSize;
-      if (cadgeom.meshlet.vertData){
-        staging.upload(geom.meshletVert, cadgeom.meshlet.vertData);
-      }
-      else {
-        geom.meshletVert = geom.meshletPrim;
-      }
-
-#if USE_PER_GEOMETRY_VIEWS
-      // views
-      geom.vboView = nvvk::createBufferView(
-          device, nvvk::makeBufferViewCreateInfo(geom.vbo, cadscene.m_cfg.fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT :
-                                                                                 VK_FORMAT_R32G32B32A32_SFLOAT));
-      geom.aboView = nvvk::createBufferView(
-          device, nvvk::makeBufferViewCreateInfo(geom.abo, cadscene.m_cfg.fp16 ? VK_FORMAT_R16G16B16A16_SFLOAT :
-                                                                                 VK_FORMAT_R32G32B32A32_SFLOAT));
-      geom.vertView = nvvk::createBufferView(
-          device, nvvk::makeBufferViewCreateInfo(geom.meshletVert, cadgeom.useShorts ? VK_FORMAT_R16_UINT : VK_FORMAT_R32_UINT));
-#endif
     }
   }
 
@@ -301,18 +272,6 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
 
 void CadSceneVK::deinit()
 {
-#if USE_PER_GEOMETRY_VIEWS
-  for(auto it = m_geometry.begin(); it != m_geometry.end(); it++)
-  {
-    if(it->aboView)
-    {
-      vkDestroyBufferView(m_device, it->vboView, NULL);
-      vkDestroyBufferView(m_device, it->aboView, NULL);
-      vkDestroyBufferView(m_device, it->vertView, NULL);
-    }
-  }
-#endif
-
   vkDestroyBuffer(m_device, m_buffers.materials, nullptr);
   vkDestroyBuffer(m_device, m_buffers.matrices, nullptr);
 

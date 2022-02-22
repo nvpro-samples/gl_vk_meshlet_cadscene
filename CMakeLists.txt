@@ -39,7 +39,7 @@ set( BUILD_${PROJNAME}_VULKAN_ONLY FALSE CACHE BOOL "Avoids OpenGL in samples th
 # add files in PACKAGE_SOURCE_FILES
 
 set( VK_EXENAME "vk_meshlet_cadscene" )
-set( GL_VK_EXENAME "gl_vk_meshlet_cadscene" )
+set( GL_EXENAME "gl_meshlet_cadscene" )
 
 if(NOT BUILD_${PROJNAME}_VULKAN_ONLY)
   _add_package_OpenGL()
@@ -72,22 +72,24 @@ download_files(FILENAMES worldcar.csf.gz blade.csf.gz)
 #####################################################################################
 # Source files for this project
 #
-file(GLOB GL_VK_SOURCE_FILES *.cpp *.hpp *.inl *.h *.c)
+file(GLOB ALL_SOURCE_FILES *.cpp *.hpp *.inl *.h *.c)
+file(GLOB GL_SOURCE_FILES *.cpp *.hpp *.inl *.h *.c)
 file(GLOB VK_SOURCE_FILES *.cpp *.hpp *.inl *.h *.c)
 file(GLOB GLSL_FILES *.glsl)
 
 list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/cadscene_gl.cpp)
 list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/cadscene_gl.hpp)
-list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/gl_nv_mesh_shader.h)
-list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/gl_nv_mesh_shader.cpp)
-list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/gl_nv_draw_vulkan_image.h)
-list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/gl_nv_draw_vulkan_image.cpp)
 list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources_gl.cpp)
 list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources_gl.hpp)
 list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/renderer_gl.cpp)
 list(REMOVE_ITEM VK_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/renderer_gl_mesh.cpp)
 
-
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/cadscene_vk.cpp)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/cadscene_vk.hpp)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources_vk.cpp)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources_vk.hpp)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/renderer_vk.cpp)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/renderer_vk_mesh.cpp)
 
 #####################################################################################
 # common source code needed for this sample
@@ -100,7 +102,7 @@ source_group(shaders FILES
   ${GLSL_FILES}
 )
 
-source_group("Source Files" FILES ${GL_VK_SOURCE_FILES})
+source_group("Source Files" FILES ${ALL_SOURCE_FILES})
 
 if(UNIX)
   set(UNIXLINKLIBS dl pthread)
@@ -122,10 +124,11 @@ endif()
 
 
 add_executable(${VK_EXENAME} ${VK_SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PACKAGE_SOURCE_FILES} ${GLSL_FILES})
+target_compile_definitions(${VK_EXENAME} PRIVATE -DIS_VULKAN=1)
 
 if(NOT BUILD_${PROJNAME}_VULKAN_ONLY)
-  add_executable(${GL_VK_EXENAME} ${GL_VK_SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PACKAGE_SOURCE_FILES} ${GLSL_FILES})
-  target_compile_definitions(${GL_VK_EXENAME} PRIVATE -DHAS_OPENGL=1)
+  add_executable(${GL_EXENAME} ${GL_SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PACKAGE_SOURCE_FILES} ${GLSL_FILES})
+  target_compile_definitions(${GL_EXENAME} PRIVATE -DIS_OPENGL=1)
 endif()
 
 #####################################################################################
@@ -143,14 +146,14 @@ foreach(RELEASELIB ${LIBRARIES_OPTIMIZED})
 endforeach(RELEASELIB)
 
 if(NOT BUILD_${PROJNAME}_VULKAN_ONLY)
-  target_link_libraries(${GL_VK_EXENAME} ${PLATFORM_LIBRARIES} nvpro_core)
+  target_link_libraries(${GL_EXENAME} ${PLATFORM_LIBRARIES} nvpro_core)
 
   foreach(DEBUGLIB ${LIBRARIES_DEBUG})
-    target_link_libraries(${GL_VK_EXENAME} debug ${DEBUGLIB})
+    target_link_libraries(${GL_EXENAME} debug ${DEBUGLIB})
   endforeach(DEBUGLIB)
 
   foreach(RELEASELIB ${LIBRARIES_OPTIMIZED})
-    target_link_libraries(${GL_VK_EXENAME} optimized ${RELEASELIB})
+    target_link_libraries(${GL_EXENAME} optimized ${RELEASELIB})
   endforeach(RELEASELIB)
 endif()
 
@@ -161,7 +164,7 @@ endif()
 
 _finalize_target( ${VK_EXENAME} )
 if(NOT BUILD_${PROJNAME}_VULKAN_ONLY)
-  _finalize_target( ${GL_VK_EXENAME} )
+  _finalize_target( ${GL_EXENAME} )
 endif()
 
 LIST(APPEND GLSL_FILES "common.h")

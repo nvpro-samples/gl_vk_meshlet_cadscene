@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -187,7 +187,6 @@ public:
 
   struct MeshletTopology
   {
-    size_t vertSize;
     size_t primSize;
     size_t descSize;
 
@@ -195,7 +194,6 @@ public:
 
     // may not be used
     void* primData = nullptr;
-    void* vertData = nullptr;
     void* descData = nullptr;
 
     ~MeshletTopology()
@@ -207,10 +205,6 @@ public:
       if(descData)
       {
         free(descData);
-      }
-      if(vertData)
-      {
-        free(vertData);
       }
     }
   };
