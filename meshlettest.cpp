@@ -162,6 +162,9 @@ class Sample
     GUI_VIEWPOINT,
     GUI_RENDERER,
     GUI_SUPERSAMPLE,
+    GUI_MESHLET_VERTICES,
+    GUI_MESHLET_PRIMITIVES,
+    GUI_TASK_MESHLETS,
   };
 
 public:
@@ -622,6 +625,25 @@ bool Sample::begin()
     m_ui.enumAdd(GUI_SUPERSAMPLE, 2, "4x");
     m_ui.enumAdd(GUI_SUPERSAMPLE, 3, "9x");
     m_ui.enumAdd(GUI_SUPERSAMPLE, 4, "16x");
+
+    // must be multiple of 32 (subgroup size)
+    m_ui.enumAdd(GUI_MESHLET_VERTICES, 32, "32");
+    m_ui.enumAdd(GUI_MESHLET_VERTICES, 64, "64");
+    m_ui.enumAdd(GUI_MESHLET_VERTICES, 96, "96");
+    m_ui.enumAdd(GUI_MESHLET_VERTICES, 128, "128");
+
+    m_ui.enumAdd(GUI_TASK_MESHLETS, 32, "32");
+    m_ui.enumAdd(GUI_TASK_MESHLETS, 64, "64");
+    m_ui.enumAdd(GUI_TASK_MESHLETS, 96, "96");
+    m_ui.enumAdd(GUI_TASK_MESHLETS, 128, "128");
+
+    // the 40,84,126 are tuned for the allocation granularity
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 32, "32");
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 40, "40");
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 64, "64");
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 84, "84");
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 96, "96");
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 126, "126");
   }
 
   m_control.m_sceneUp        = m_modelUpVector;
@@ -690,11 +712,11 @@ void Sample::processUI(int width, int height, double time)
     ImGui::SliderFloat("fov", &m_tweak.fov, 1, 120, "%.0f");
     if(ImGui::CollapsingHeader("Mesh Shading Settings", ImGuiTreeNodeFlags_DefaultOpen))
     {
-      ImGuiH::InputIntClamped("meshlet vertices", &m_modelConfig.meshVertexCount, 32, 256, 32, 32, ImGuiInputTextFlags_EnterReturnsTrue);
-      ImGuiH::InputIntClamped("meshlet primitives", &m_modelConfig.meshPrimitiveCount, 32, 256, 32, 32,
-                              ImGuiInputTextFlags_EnterReturnsTrue);
+      m_ui.enumCombobox(GUI_MESHLET_VERTICES, "meshlet vertices", &m_modelConfig.meshVertexCount);
+      m_ui.enumCombobox(GUI_MESHLET_PRIMITIVES, "meshlet primitives", &m_modelConfig.meshPrimitiveCount);
       ImGui::Checkbox("(mesh) colorize by meshlet", &m_tweak.colorize);
-      ImGuiH::InputIntClamped("task meshlet count", &m_tweak.numTaskMeshlets, 0, 128, 1, 16, ImGuiInputTextFlags_EnterReturnsTrue);
+
+      m_ui.enumCombobox(GUI_MESHLET_VERTICES, "task meshlet count", &m_tweak.numTaskMeshlets);
       ImGuiH::InputIntClamped("task min. meshlets\n0 disables task stage", &m_tweak.minTaskMeshlets, 0, 256, 1, 16, ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::SliderFloat("(task) pixel cull", &m_tweak.pixelCull, 0.0f, 1.0f, "%.2f");
       ImGui::Checkbox("(mesh) use per-primitive culling ", &m_tweak.usePrimitiveCull);

@@ -233,6 +233,14 @@ vec4 getExtra( uint vidx, uint xtra ){
 //////////////////////////////////////////////////
 // EXECUTION
 
+// This is the code that is normally done in the vertex-shader
+// "vidx" is what gl_VertexIndex would be
+//
+// We split vertex-shading from attribute-shading,
+// to highlight the differences between the drawmeshlet_cull.mesh.glsl
+// and drawmeshlet_basic.mesh.glsl files (just use a file-diff
+// program to view the two)
+
 vec4 procVertex(const uint vert, uint vidx)
 {
   vec3 oPos = getPosition(vidx);
@@ -308,10 +316,10 @@ void procAttributes(const uint vert, uint vidx)
     memoryBarrierShared(); \
     barrier();
 
-// When we do per-triangle culling we have two options
+// When we do per-primitive culling we have two options
 // how to deal with the vertex outputs:
-// - do them regardless of culling result
-// - wait until we know which vertices are actually used
+// - do them regardless of culling result (USE_VERTEX_CULL == 0)
+// - wait until we know which vertices are actually used (USE_VERTEX_CULL == 1)
 
 // NV_mesh_shader allows to have read and write
 // access to mesh-shader outputs. Instead of using
@@ -342,36 +350,39 @@ void procAttributes(const uint vert, uint vidx)
   void vertexcull_setVertexUsed(uint vert) {
     OUT[vert].wNormal.y = 1;
   }
-
-  uint vertexcull_getVertexClip(uint vert) {
-    return floatBitsToUint(OUT[vert].wNormal.z);
-  }
-
-  void vertexcull_setVertexClip(uint vert, uint mask) {
+  
+  // even for primitive culling we hijack
+  // the output values
+  void primcull_setVertexClip(uint vert, uint mask) {
   #if USE_MESH_FRUSTUMCULL
     OUT[vert].wNormal.z = uintBitsToFloat(mask);
   #endif
   }
+  uint primcull_getVertexClip(uint vert) {
+    return floatBitsToUint(OUT[vert].wNormal.z);
+  }
 #else
-  void vertexcull_clearVertexUsed(uint vert) {
+  // in this scenario we have written vertex outputs already
+  // so we cannot repurpose the output space for temporary
+  // storage
+  
+  void primcull_setVertexClip(uint vert, uint mask) {
     // dummy
   }
-  void vertexcull_setVertexUsed(uint vert) {
-    // dummy
-  }
-  void vertexcull_setVertexClip(uint vert, uint mask) {
-    // dummy
-  }
-  uint vertexcull_getVertexClip(uint vert) {
+  uint primcull_getVertexClip(uint vert) {
     return getCullBits(gl_MeshVerticesNV[vert].gl_Position);
   }
 #endif
 
-  vec2 vertexcull_getVertexScreen(uint vert) {
+  vec2 primcull_getVertexScreen(uint vert) {
     return getScreenPos(gl_MeshVerticesNV[vert].gl_Position);
   }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+// One can see that the primary mesh-shader code is agnostic of the vertex-shading work.
+// In theory it should be possible to even automatically generate mesh-shader SPIR-V
+// as combination of a template mesh-shader and a vertex-shader provided as SPIR-V
 
 void main()
 {
@@ -405,8 +416,10 @@ void main()
   {
     uint vert = laneID + i * WORKGROUP_SIZE;
     uint vertLoad = min(vert, vertMax);
-
+    
+  #if USE_VERTEX_CULL
     vertexcull_clearVertexUsed(vert);
+  #endif
 
     {
       uint idx   = (vertLoad) >> (vidxDiv-1);
@@ -419,12 +432,20 @@ void main()
       vidx += geometryOffsets.w;
 
       vec4 hPos = procVertex(vert, vidx);
-      vertexcull_setVertexClip(vert, getCullBits(hPos));
-
+      
+      primcull_setVertexClip(vert, getCullBits(hPos));
+      
     #if USE_VERTEX_CULL
+      // we want to keep the vertex index so that
+      // later, after culling, we don't have to load it again
       vertexcull_writeVertexIndex(vert, vidx);
     #else
-      procAttributes(vert, vidx);    
+      // we don't perform vertex culling and directly
+      // process the rest of the vertex-shading work here.
+      // Otherwise we defer it after triangle culling,
+      // so that only the attribute work is done that is
+      // really required.
+      procAttributes(vert, vidx);  
     #endif
     }
   }
@@ -434,6 +455,17 @@ void main()
     uint readBegin = primStart / 2;
     uint readIndex = primCount * 3 - 1;
     uint readMax   = readIndex / 8;
+    
+    // To speed up loading of the primitive (triangle) indices
+    // we load 64-bit per thread (NV hardware as fast paths
+    // to load aligned 64- and 128-bit values).
+    // MESHLET_INDICES_ITERATIONS is typically 1 as result.
+    // We also make use of a special intrinsic to distribute
+    // the index values into the gl_PrimitiveIndicesNV array.
+    //
+    // A bit of caution must be taken here, as we must ensure the indices
+    // written by the intrinsics fit within the "max_primitives" we
+    // declared at start.
 
     UNROLL_LOOP
     for (uint i = 0; i < uint(MESHLET_INDICES_ITERATIONS); i++)
@@ -476,25 +508,29 @@ void main()
       topology.w = uint8_t(0);
 
       // build triangle
-      vec2 a = vertexcull_getVertexScreen(ia);
-      vec2 b = vertexcull_getVertexScreen(ib);
-      vec2 c = vertexcull_getVertexScreen(ic);
+      vec2 a = primcull_getVertexScreen(ia);
+      vec2 b = primcull_getVertexScreen(ib);
+      vec2 c = primcull_getVertexScreen(ic);
 
     #if USE_MESH_FRUSTUMCULL
-      uint abits = vertexcull_getVertexClip(ia);
-      uint bbits = vertexcull_getVertexClip(ib);
-      uint cbits = vertexcull_getVertexClip(ic);
+      // if the task-shader is active and does the frustum culling
+      // then we normally don't execute this here
+      uint abits = primcull_getVertexClip(ia);
+      uint bbits = primcull_getVertexClip(ib);
+      uint cbits = primcull_getVertexClip(ic);
 
       primVisible = testTriangle(a.xy, b.xy, c.xy, 1.0, abits, bbits, cbits);
     #else
       primVisible = testTriangle(a.xy, b.xy, c.xy, 1.0, false);
     #endif
 
+    #if USE_VERTEX_CULL
       if (primVisible) {
         vertexcull_setVertexUsed(ia);
         vertexcull_setVertexUsed(ib);
         vertexcull_setVertexUsed(ic);
       }
+    #endif
     }
 
     uvec4 voteTris  = subgroupBallot(primVisible);
@@ -507,6 +543,7 @@ void main()
       gl_PrimitiveIndicesNV[idx + 1] = topology.y;
       gl_PrimitiveIndicesNV[idx + 2] = topology.z;
     #if SHOW_PRIMIDS
+      // let's compute some fake unique primitiveID
       gl_MeshPrimitivesNV[idxOffset].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + prim);
     #endif
     }

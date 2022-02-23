@@ -210,6 +210,14 @@ vec4 getExtra( uint vidx, uint xtra ){
 //////////////////////////////////////////////////
 // EXECUTION
 
+// This is the code that is normally done in the vertex-shader
+// "vidx" is what gl_VertexIndex would be
+//
+// We split vertex-shading from attribute-shading,
+// to highlight the differences between the drawmeshlet_cull.mesh.glsl
+// and drawmeshlet_basic.mesh.glsl files (just use a file-diff
+// program to view the two)
+
 vec4 procVertex(const uint vert, uint vidx)
 {
   vec3 oPos = getPosition(vidx);
@@ -283,6 +291,10 @@ void procAttributes(const uint vert, uint vidx)
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// One can see that the primary mesh-shader code is agnostic of the vertex-shading work.
+// In theory it should be possible to even automatically generate mesh-shader SPIR-V
+// as combination of a template mesh-shader and a vertex-shader provided as SPIR-V
+
 void main()
 {
 
@@ -317,6 +329,16 @@ void main()
     uint vertLoad = min(vert, vertMax);
 
     {
+      // the meshlet contains two set of indices
+      // - vertex indices (which can be either 16 or 32 bit)
+      //   are loaded here. The idx is manipulated
+      //   as one 32 bit value contains either two 16 bits
+      //   or just a single 32 bit.
+      //   The bit shifting handles the 16 or 32 bit decoding
+      //   
+      // - primitive (triangle) indices are loaded
+      //   later in bulk, see PRIMITIVE TOPOLOGY
+    
       uint idx   = (vertLoad) >> (vidxDiv-1);
       uint shift = (vertLoad) &  (vidxDiv-1);
 
@@ -325,7 +347,8 @@ void main()
       vidx >>= vidxBits;
 
       vidx += geometryOffsets.w;
-
+      
+      // here we do the work typically done in the vertex-shader
       procVertex(vert, vidx);
       procAttributes(vert, vidx);
     }
@@ -336,6 +359,17 @@ void main()
     uint readBegin = primStart / 2;
     uint readIndex = primCount * 3 - 1;
     uint readMax   = readIndex / 8;
+    
+    // To speed up loading of the primitive (triangle) indices
+    // we load 64-bit per thread (NV hardware as fast paths
+    // to load aligned 64- and 128-bit values).
+    // MESHLET_INDICES_ITERATIONS is typically 1 as result.
+    // We also make use of a special intrinsic to distribute
+    // the index values into the gl_PrimitiveIndicesNV array.
+    //
+    // A bit of caution must be taken here, as we must ensure the indices
+    // written by the intrinsics fit within the "max_primitives" we
+    // declared at start.
 
     UNROLL_LOOP
     for (uint i = 0; i < uint(MESHLET_INDICES_ITERATIONS); i++)
@@ -354,6 +388,7 @@ void main()
     {
       uint prim = laneID + i * WORKGROUP_SIZE;
       if (prim <= primMax) {
+        // let's compute some fake unique primitiveID
         gl_MeshPrimitivesNV[prim].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + prim);
       }
     }
