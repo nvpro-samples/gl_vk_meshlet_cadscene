@@ -60,6 +60,14 @@
 //////////////////////////////////////////////////
 // INPUT
 
+// We are using simple vertex attributes here, so
+// that we can switch easily between fp32 and fp16 to
+// investigate impact of vertex bandwith.
+//
+// In a more performance critical scenario we recommend the use
+// of packed normals for CAD, like octant encoding and pack position
+// and normal in a single 128-bit value.
+
 in layout(location=VERTEX_POS)      vec3 oPos;
 in layout(location=VERTEX_NORMAL)   vec3 oNormal;
 #if VERTEX_EXTRAS_COUNT

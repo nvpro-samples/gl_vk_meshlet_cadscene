@@ -152,6 +152,14 @@ layout(triangles) out;
 ////////////////////////////////////////////////////////////
 // INPUT
 
+// We are using simple vertex attributes here, so
+// that we can switch easily between fp32 and fp16 to
+// investigate impact of vertex bandwith.
+//
+// In a more performance critical scenario we recommend the use
+// of packed normals for CAD, like octant encoding and pack position
+// and normal in a single 128-bit value.
+
 // If you work from fixed vertex definitions and don't need dynamic
 // format conversions by texture formats, or don't mind
 // creating multiple shader permutations, you may want to
