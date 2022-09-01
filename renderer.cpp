@@ -18,22 +18,16 @@
  */
 
 
-
 #include "renderer.hpp"
 #include <algorithm>
-#include <assert.h>
-
 #include <nvh/nvprint.hpp>
-#include <nvmath/nvmath_glsltypes.h>
-
-#include "common.h"
 
 #pragma pack(1)
 
 
 namespace meshlettest {
-uint32_t Resources::s_vkDevice          = 0;
-uint32_t Resources::s_glDevice          = 0;
+uint32_t Resources::s_vkDevice = 0;
+uint32_t Resources::s_glDevice = 0;
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -57,6 +51,7 @@ static void FillSingle(std::vector<RenderList::DrawItem>& drawItems,
                        const CadScene::Geometry&          geo,
                        int                                objectIndex)
 {
+  (void)objectIndex;
   if(!obj.parts[0].active || !geo.numIndexSolid)
     return;
 
@@ -78,6 +73,7 @@ static void FillIndividual(std::vector<RenderList::DrawItem>& drawItems,
                            const CadScene::Geometry&          geo,
                            int                                objectIndex)
 {
+  (void)objectIndex;
   for(size_t p = 0; p < obj.parts.size(); p++)
   {
     const CadScene::ObjectPart&   part    = obj.parts[p];
@@ -100,10 +96,10 @@ static void FillIndividual(std::vector<RenderList::DrawItem>& drawItems,
 
 static inline bool DrawItem_compare_groups(const RenderList::DrawItem& a, const RenderList::DrawItem& b)
 {
-  int diff = 0;
-  diff     = diff != 0 ? diff : ((a.task ? 1 : 0) - (b.task ? 1 : 0));
-  diff     = diff != 0 ? diff : (a.geometryIndex - b.geometryIndex);
-  diff     = diff != 0 ? diff : (a.matrixIndex - b.matrixIndex);
+  int diff;
+  diff = ((a.task ? 1 : 0) - (b.task ? 1 : 0));
+  diff = diff != 0 ? diff : (a.geometryIndex - b.geometryIndex);
+  diff = diff != 0 ? diff : (a.matrixIndex - b.matrixIndex);
 
   return diff < 0;
 }
@@ -137,18 +133,17 @@ void RenderList::setup(const CadScene* NV_RESTRICT scene, const Config& config)
 
   uint32_t sumTriangles      = 0;
   uint32_t sumTrianglesShort = 0;
-  for(size_t i = 0; i < m_drawItems.size(); i++)
+  for(auto& di : m_drawItems)
   {
-    const DrawItem& di = m_drawItems[i];
     sumTriangles += di.range.count / 3;
     sumTrianglesShort += (di.range.count / 3) * (di.shorts ? 1 : 0);
     m_stats.tasksInput += di.task ? ((di.meshlet.count + config.taskNumMeshlets - 1) / config.taskNumMeshlets) : 0;
     m_stats.meshletsInput += di.meshlet.count;
     m_stats.trisInput += di.range.count / 3;
   }
-  LOGI("draw calls:      %9d\n", uint32_t(m_drawItems.size()));
-  LOGI("triangles total: %9d\n", sumTriangles);
-  LOGI("triangles short: %9d\n\n", sumTrianglesShort);
+  LOGI("draw calls:      %9d\n", uint32_t(m_drawItems.size()))
+  LOGI("triangles total: %9d\n", sumTriangles)
+  LOGI("triangles short: %9d\n\n", sumTrianglesShort)
 
   std::sort(m_drawItems.begin(), m_drawItems.end(), DrawItem_compare_groups);
 }

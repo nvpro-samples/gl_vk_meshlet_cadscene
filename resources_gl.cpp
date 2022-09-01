@@ -139,20 +139,20 @@ bool ResourcesGL::initPrograms(const std::string& path, const std::string& prepe
   if(m_nativeMeshSupport)
   {
     m_programids.draw_object_mesh = m_progManager.createProgram(
-        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet_basic.mesh.glsl"),
-        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet_nv_basic.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet_nv.frag.glsl"));
     m_programids.draw_object_mesh_task = m_progManager.createProgram(
-        nvgl::ProgramManager::Definition(GL_TASK_SHADER_NV, "drawmeshlet.task.glsl"),
-        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet_basic.mesh.glsl"),
-        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
+        nvgl::ProgramManager::Definition(GL_TASK_SHADER_NV, "drawmeshlet_nv.task.glsl"),
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet_nv_basic.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet_nv.frag.glsl"));
 
     m_programids.draw_object_cull_mesh = m_progManager.createProgram(
-        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet_cull.mesh.glsl"),
-        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 0\n", "drawmeshlet_nv_cull.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet_nv.frag.glsl"));
     m_programids.draw_object_cull_mesh_task = m_progManager.createProgram(
-        nvgl::ProgramManager::Definition(GL_TASK_SHADER_NV, "drawmeshlet.task.glsl"),
-        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet_cull.mesh.glsl"),
-        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet.frag.glsl"));
+        nvgl::ProgramManager::Definition(GL_TASK_SHADER_NV, "drawmeshlet_nv.task.glsl"),
+        nvgl::ProgramManager::Definition(GL_MESH_SHADER_NV, "#define USE_TASK_STAGE 1\n", "drawmeshlet_nv_cull.mesh.glsl"),
+        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "drawmeshlet_nv.frag.glsl"));
   }
 
   updatedPrograms();

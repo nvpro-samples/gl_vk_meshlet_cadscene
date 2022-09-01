@@ -22,7 +22,7 @@
 #define CADSCENE_H__
 
 #include <nvmath/nvmath.h>
-#include <stdint.h>
+#include <cstdint>
 #include <vector>
 
 #include "config.h"
@@ -56,7 +56,7 @@ public:
       max = nvmath::nv_max(max, bbox.max);
     }
 
-    inline BBox transformed(const nvmath::mat4f& matrix, int dim = 3)
+    [[nodiscard]] inline BBox transformed(const nvmath::mat4f& matrix, int dim = 3) const
     {
       int           i;
       nvmath::vec4f box[16];
@@ -107,7 +107,11 @@ public:
     MaterialSide sides[2];
     uint32_t     _pad[8 * 4];
 
-    Material() { memset(this, 0, sizeof(Material)); }
+    Material()
+        : _pad{}
+    {
+      memset((void*)this, 0, sizeof(Material));
+    }
   };
 
   // need to keep this 256 byte aligned (UBO range)
@@ -182,7 +186,7 @@ public:
   struct GeometryPart
   {
     DrawRange    indexSolid;
-    MeshletRange meshSolid;
+    MeshletRange meshSolid{};
   };
 
   struct MeshletTopology
@@ -277,10 +281,10 @@ public:
     uint32_t extraAttributes = 0;
 
     // must not change order
-    uint32_t           meshVertexCount    = 64;
-    uint32_t           meshPrimitiveCount = 126;
+    uint32_t meshVertexCount    = 64;
+    uint32_t meshPrimitiveCount = 126;
 
-    MeshletBuilderType meshBuilder        = MESHLET_BUILDER_PACKBASIC;
+    MeshletBuilderType meshBuilder = MESHLET_BUILDER_PACKBASIC;
   };
 
   std::vector<Material>   m_materials;
@@ -307,9 +311,9 @@ public:
   void unload();
 
 
-  size_t getVertexSize() const { return m_cfg.fp16 ? sizeof(VertexFP16) : sizeof(Vertex); }
+  [[nodiscard]] size_t getVertexSize() const { return m_cfg.fp16 ? sizeof(VertexFP16) : sizeof(Vertex); }
 
-  size_t getVertexAttributeSize() const
+  [[nodiscard]] size_t getVertexAttributeSize() const
   {
     return m_cfg.fp16 ? (sizeof(VertexAttributesFP16) + sizeof(half) * 4 * m_cfg.extraAttributes) :
                         (sizeof(VertexAttributes) + sizeof(float) * 4 * m_cfg.extraAttributes);

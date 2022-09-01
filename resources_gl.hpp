@@ -59,10 +59,10 @@ public:
 
   struct FrameBuffer
   {
-    bool useResolve;
-    int  renderWidth;
-    int  renderHeight;
-    int  supersample;
+    bool useResolve{};
+    int  renderWidth{};
+    int  renderHeight{};
+    int  supersample{};
 
     GLuint fboScene             = 0;
     GLuint texSceneColor        = 0;
@@ -71,7 +71,7 @@ public:
 
   struct Common
   {
-    GLuint         standardVao;
+    GLuint       standardVao{};
     nvgl::Buffer viewBuffer;
     nvgl::Buffer statsBuffer;
     nvgl::Buffer statsReadBuffer;
@@ -117,7 +117,7 @@ public:
   void getStats(CullStats& stats) override;
   void copyStats() const;
 
-  uvec2 storeU64(GLuint64 address) { return uvec2(address & 0xFFFFFFFF, address >> 32); }
+  static uvec2 storeU64(GLuint64 address) { return {address & 0xFFFFFFFF, address >> 32}; }
 
   void enableVertexFormat() const;
 

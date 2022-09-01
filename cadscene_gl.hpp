@@ -42,29 +42,29 @@ public:
 
   struct Chunk
   {
-    GLuint vboGL;
-    GLuint aboGL;
-    GLuint iboGL;
+    GLuint vboGL{};
+    GLuint aboGL{};
+    GLuint iboGL{};
     GLuint meshGL = 0;
     GLuint meshIndicesGL = 0;
 
-    GLuint vboTEX;
-    GLuint aboTEX;
+    GLuint vboTEX{};
+    GLuint aboTEX{};
 
-    size_t vboSize;
-    size_t aboSize;
-    size_t iboSize;
-    size_t meshSize;
-    size_t meshIndicesSize;
+    size_t vboSize{};
+    size_t aboSize{};
+    size_t iboSize{};
+    size_t meshSize{};
+    size_t meshIndicesSize{};
 
-    uint64_t vboADDR;
-    uint64_t aboADDR;
-    uint64_t iboADDR;
-    uint64_t meshADDR;
-    uint64_t meshIndicesADDR;
+    uint64_t vboADDR{};
+    uint64_t aboADDR{};
+    uint64_t iboADDR{};
+    uint64_t meshADDR{};
+    uint64_t meshIndicesADDR{};
 
-    uint64_t vboTEXADDR;
-    uint64_t aboTEXADDR;
+    uint64_t vboTEXADDR{};
+    uint64_t aboTEXADDR{};
   };
 
   void init(size_t vboStride, size_t aboStride, size_t maxChunk, bool bindless, bool fp16);
@@ -72,51 +72,51 @@ public:
   void alloc(size_t vboSize, size_t aboSize, size_t iboSize, size_t meshSize, size_t meshIndicesSize, Allocation& allocation);
   void finalize();
 
-  size_t getVertexSize() const
+  [[nodiscard]] size_t getVertexSize() const
   {
     size_t size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto & m_chunk : m_chunks)
     {
-      size += m_chunks[i].vboSize;
+      size += m_chunk.vboSize;
     }
     return size;
   }
 
-  size_t getAttributeSize() const
+  [[nodiscard]] size_t getAttributeSize() const
   {
     size_t size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto & m_chunk : m_chunks)
     {
-      size += m_chunks[i].aboSize;
+      size += m_chunk.aboSize;
     }
     return size;
   }
 
-  size_t getIndexSize() const
+  [[nodiscard]] size_t getIndexSize() const
   {
     size_t size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto & m_chunk : m_chunks)
     {
-      size += m_chunks[i].iboSize;
+      size += m_chunk.iboSize;
     }
     return size;
   }
 
-  size_t getMeshSize() const
+  [[nodiscard]] size_t getMeshSize() const
   {
     size_t size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto & m_chunk : m_chunks)
     {
-      size += m_chunks[i].meshSize + m_chunks[i].meshIndicesSize;
+      size += m_chunk.meshSize + m_chunk.meshIndicesSize;
     }
     return size;
   }
 
-  const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
+  [[nodiscard]] const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
 
-  const Chunk& getChunk(Index index) const { return m_chunks[index]; }
+  [[nodiscard]] const Chunk& getChunk(Index index) const { return m_chunks[index]; }
 
-  size_t getChunkCount() const { return m_chunks.size(); }
+  [[nodiscard]] size_t getChunkCount() const { return m_chunks.size(); }
 
 private:
   size_t m_alignment;
@@ -145,7 +145,7 @@ class CadSceneGL
 public:
   struct Geometry
   {
-    GeometryMemoryGL::Allocation mem;
+    GeometryMemoryGL::Allocation mem{};
 
     nvgl::BufferBinding vbo;
     nvgl::BufferBinding abo;

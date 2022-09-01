@@ -18,7 +18,6 @@
  */
 
 
-
 #include "cadscene.hpp"
 #include <fileformats/cadscenefile.h>
 
@@ -28,10 +27,8 @@
 #include <nvh/misc.hpp>
 
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 #include <platform.h>
-
-#define USE_CACHECOMBINE 1
 
 NV_INLINE half floatToHalf(float fval)
 {
@@ -42,7 +39,7 @@ NV_INLINE half floatToHalf(float fval)
   }
   else
   {
-    int e = ((ival & 0x7f800000) >> 23) - 127 + 15;
+    unsigned long e = ((ival & 0x7f800000) >> 23) - 127 + 15;
     if(e < 0)
     {
       return 0;
@@ -78,9 +75,9 @@ nvmath::vec4f randomVector(float from, float to)
 {
   nvmath::vec4f vec;
   float         width = to - from;
-  for(int i = 0; i < 4; i++)
+  for(float& f : vec.vec_array)
   {
-    vec.vec_array[i] = from + (float(rand()) / float(RAND_MAX)) * width;
+    f = from + (float(rand()) / float(RAND_MAX)) * width;
   }
   return vec;
 }
@@ -127,15 +124,14 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
   m_materials.resize(csf->numMaterials);
   for(int n = 0; n < csf->numMaterials; n++)
   {
-    CSFMaterial* csfmaterial = &csf->materials[n];
-    Material&    material    = m_materials[n];
+    Material& material = m_materials[n];
 
-    for(int i = 0; i < 2; i++)
+    for(auto& side : material.sides)
     {
-      material.sides[i].ambient  = randomVector(0.0f, 0.1f);
-      material.sides[i].diffuse  = nvmath::vec4f(csf->materials[n].color) + randomVector(0.0f, 0.07f);
-      material.sides[i].specular = randomVector(0.25f, 0.55f);
-      material.sides[i].emissive = randomVector(0.0f, 0.05f);
+      side.ambient  = randomVector(0.0f, 0.1f);
+      side.diffuse  = nvmath::vec4f(csf->materials[n].color) + randomVector(0.0f, 0.07f);
+      side.specular = randomVector(0.25f, 0.55f);
+      side.emissive = randomVector(0.0f, 0.05f);
     }
   }
 
@@ -310,7 +306,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     }
   }
 
-  LOGI("geometries: shorts %d, total %d\n", tshorts, ttotal);
+  LOGI("geometries: shorts %d, total %d\n", tshorts, ttotal)
 
 
   srand(63546);
@@ -339,7 +335,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     m_matrices[n].bboxMin = m_bboxes[csfnode->geometryIDX].min;
     m_matrices[n].bboxMax = m_bboxes[csfnode->geometryIDX].max;
 
-    if(true && csfnode->numParts)
+    if(csfnode->numParts != 0)
     {
       m_matrices[n].color = m_materials[csfnode->parts[0].materialIDX].sides[0].diffuse;
     }
@@ -424,6 +420,8 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
         sq++;
       }
       break;
+    default:
+      assert(false);
   }
 
 
@@ -433,9 +431,9 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
     nvmath::vec4f shift = dim * 1.05f;
 
-    float u = 0;
-    float v = 0;
-    float w = 0;
+    float u;
+    float v;
+    float w;
 
     switch(numAxis)
     {
@@ -444,13 +442,15 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
         break;
       case 2:
         u = float(c % sq);
-        v = float(c / sq);
+        v = static_cast<float>(c) / static_cast<float>(sq);
         break;
       case 3:
         u = float(c % sq);
         v = float((c / sq) % sq);
-        w = float(c / (sq * sq));
+        w = static_cast<float>(c) / static_cast<float>(sq * sq);
         break;
+      default:
+        assert(false);
     }
 
     float use = u;
@@ -512,9 +512,9 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
       object = objectorig;
       object.matrixIndex += c * numNodes;
-      for(size_t p = 0; p < object.parts.size(); p++)
+      for(auto& part : object.parts)
       {
-        object.parts[p].matrixIndex += c * numNodes;
+        part.matrixIndex += c * numNodes;
       }
 
       BBox bbox = m_bboxes[object.geometryIndex].transformed(m_matrices[object.matrixIndex].worldMatrix);
@@ -576,6 +576,7 @@ size_t fillIndexBuffer(int useShorts, const std::vector<unsigned int>& vertexind
 
 void fillMeshletTopology(NVMeshlet::PackBasicBuilder::MeshletGeometry& geometry, CadScene::MeshletTopology& topo, int useShorts)
 {
+  (void)useShorts;
   if(geometry.meshletDescriptors.empty())
     return;
 
@@ -600,14 +601,14 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
 
   if(m_cfg.meshBuilder == MESHLET_BUILDER_PACKBASIC)
   {
-    NVMeshlet::PackBasicBuilder meshletBuilder;
+    NVMeshlet::PackBasicBuilder meshletBuilder{};
     meshletBuilder.setup(m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount, false);
 
 #pragma omp parallel for
     for(int g = 0; g < csf->numGeometries; g++)
     {
-      const CSFGeometry*    csfgeom = csf->geometries + g;
-      Geometry&             geom    = m_geometry[g];
+      const CSFGeometry* csfgeom = csf->geometries + g;
+      Geometry&          geom    = m_geometry[g];
 
       NVMeshlet::PackBasicBuilder::MeshletGeometry meshletGeometry;
 
@@ -620,11 +621,10 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
         uint32_t numIndex              = parts[p].numIndexSolid;
         geom.parts[p].meshSolid.offset = numMeshlets;
 
-        uint32_t processedIndices =
-          meshletBuilder.buildMeshlets<uint32_t>(meshletGeometry, numIndex, indices + indexOffset);
+        uint32_t processedIndices = meshletBuilder.buildMeshlets<uint32_t>(meshletGeometry, numIndex, indices + indexOffset);
         if(processedIndices != numIndex)
         {
-          LOGE("warning: geometry meshlet incomplete %d\n", g);
+          LOGE("warning: geometry meshlet incomplete %d\n", g)
         }
 
         geom.parts[p].meshSolid.count = (uint32_t)meshletGeometry.meshletDescriptors.size() - numMeshlets;
@@ -635,12 +635,12 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
       geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
 
       meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
-        (const float*)csfgeom->vertex, sizeof(float) * 3);
+                                              (const float*)csfgeom->vertex, sizeof(float) * 3);
       if(m_cfg.verbose)
       {
 #if MESHLET_ERRORCHECK
         NVMeshlet::StatusCode errorcode = meshletBuilder.errorCheck<uint32_t>(meshletGeometry, 0, csfgeom->numVertices - 1,
-          csfgeom->numIndexSolid, csfgeom->indexSolid);
+                                                                              csfgeom->numIndexSolid, csfgeom->indexSolid);
         if(errorcode)
         {
           LOGE("geometry %d: meshlet error %d\n", g, errorcode);
@@ -672,7 +672,7 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
     }
   }
 
-  LOGI("meshlet config: %d vertices, %d primitives\n", m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount);
+  LOGI("meshlet config: %d vertices, %d primitives\n", m_cfg.meshVertexCount, m_cfg.meshPrimitiveCount)
 
   if(m_cfg.verbose)
   {
@@ -680,6 +680,5 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
   }
 
   LOGI("meshlet total: %9d meshlets, %7d KB (w %.2f)\n", groups, m_meshSize / 1024,
-       (double(m_meshSize) / double(meshActualSizeTotal) - 1.0));
+       (double(m_meshSize) / double(meshActualSizeTotal) - 1.0))
 }
-

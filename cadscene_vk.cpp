@@ -17,13 +17,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
-#include "nvmeshlet_packbasic.hpp"
-
 #include "cadscene_vk.hpp"
 
 #include <algorithm>
-#include <inttypes.h>
+#include <cinttypes>
 #include <nvh/nvprint.hpp>
 
 
@@ -66,13 +63,13 @@ void GeometryMemoryVK::init(VkDevice                     device,
   // costs of entire model, provide offset into large buffers per geometry
   VkDeviceSize tboSize = limits.maxTexelBufferElements;
 
-  const VkDeviceSize vboMax  = VkDeviceSize(tboSize) * sizeof(float) * 4;
-  const VkDeviceSize iboMax  = VkDeviceSize(tboSize) * sizeof(uint16_t);
+  const VkDeviceSize vboMax         = VkDeviceSize(tboSize) * sizeof(float) * 4;
+  const VkDeviceSize iboMax         = VkDeviceSize(tboSize) * sizeof(uint16_t);
   const VkDeviceSize meshIndicesMax = VkDeviceSize(tboSize) * sizeof(uint16_t);
-  
-  m_maxVboChunk  = std::min(vboMax, maxChunk);
-  m_maxIboChunk  = std::min(iboMax, maxChunk);
-  m_maxMeshChunk = maxChunk;
+
+  m_maxVboChunk         = std::min(vboMax, maxChunk);
+  m_maxIboChunk         = std::min(iboMax, maxChunk);
+  m_maxMeshChunk        = maxChunk;
   m_maxMeshIndicesChunk = std::min(meshIndicesMax, maxChunk);
 }
 
@@ -103,11 +100,11 @@ void GeometryMemoryVK::deinit()
 }
 
 void GeometryMemoryVK::alloc(VkDeviceSize vboSize,
-                           VkDeviceSize aboSize,
-                           VkDeviceSize iboSize,
-                           VkDeviceSize meshSize,
-                           VkDeviceSize meshIndicesSize,
-                           Allocation&  allocation)
+                             VkDeviceSize aboSize,
+                             VkDeviceSize iboSize,
+                             VkDeviceSize meshSize,
+                             VkDeviceSize meshIndicesSize,
+                             Allocation&  allocation)
 {
   vboSize         = alignedSize(vboSize, m_vboAlignment);
   aboSize         = alignedSize(aboSize, m_aboAlignment);
@@ -159,7 +156,8 @@ void GeometryMemoryVK::finalize()
   chunk.abo = m_memoryAllocator->createBuffer(chunk.aboSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | flags, chunk.aboAID);
   chunk.ibo = m_memoryAllocator->createBuffer(chunk.iboSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | flags, chunk.iboAID);
   chunk.mesh = m_memoryAllocator->createBuffer(chunk.meshSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flags, chunk.meshAID);
-  chunk.meshIndices = m_memoryAllocator->createBuffer(chunk.meshIndicesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flags, chunk.meshIndicesAID);
+  chunk.meshIndices =
+      m_memoryAllocator->createBuffer(chunk.meshIndicesSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flags, chunk.meshIndicesAID);
 
   chunk.meshInfo        = {chunk.mesh, 0, chunk.meshSize};
   chunk.meshIndicesInfo = {chunk.meshIndices, 0, chunk.meshIndicesSize};
@@ -194,24 +192,25 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
       const CadScene::Geometry& cadgeom = cadscene.m_geometry[g];
       Geometry&                 geom    = m_geometry[g];
 
-      m_geometryMem.alloc(cadgeom.vboSize, cadgeom.aboSize, cadgeom.iboSize, cadgeom.meshSize, cadgeom.meshIndicesSize, geom.allocation);
+      m_geometryMem.alloc(cadgeom.vboSize, cadgeom.aboSize, cadgeom.iboSize, cadgeom.meshSize, cadgeom.meshIndicesSize,
+                          geom.allocation);
     }
 
     m_geometryMem.finalize();
 
-    LOGI("Size of vertex data: %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize()));
-    LOGI("Size of attrib data: %11" PRId64 "\n", uint64_t(m_geometryMem.getAttributeSize()));
-    LOGI("Size of index data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIndexSize()));
-    LOGI("Size of mesh data:   %11" PRId64 "\n", uint64_t(m_geometryMem.getMeshSize()));
+    LOGI("Size of vertex data: %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize()))
+    LOGI("Size of attrib data: %11" PRId64 "\n", uint64_t(m_geometryMem.getAttributeSize()))
+    LOGI("Size of index data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIndexSize()))
+    LOGI("Size of mesh data:   %11" PRId64 "\n", uint64_t(m_geometryMem.getMeshSize()))
     LOGI("Size of all data:    %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize() + m_geometryMem.getAttributeSize()
-                                                          + m_geometryMem.getIndexSize() + m_geometryMem.getMeshSize()));
-    LOGI("Chunks:              %11d\n", uint32_t(m_geometryMem.getChunkCount()));
+                                                          + m_geometryMem.getIndexSize() + m_geometryMem.getMeshSize()))
+    LOGI("Chunks:              %11d\n", uint32_t(m_geometryMem.getChunkCount()))
   }
 
   {
     VkDeviceSize allocatedSize, usedSize;
     m_memAllocator.getUtilization(allocatedSize, usedSize);
-    LOGI("scene geometry: used %d KB allocated %d KB\n", usedSize / 1024, allocatedSize / 1024);
+    LOGI("scene geometry: used %d KB allocated %d KB\n", usedSize / 1024, allocatedSize / 1024)
   }
 
   ScopeStaging staging(&m_memAllocator, queue, queueFamilyIndex);

@@ -54,6 +54,7 @@ _find_package_OpenMP()
 if (OPENMP_FOUND)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+  add_definitions(-DOPENMP_FOUND)
 endif()
 
 
@@ -90,6 +91,8 @@ list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources_vk.cpp)
 list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources_vk.hpp)
 list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/renderer_vk.cpp)
 list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/renderer_vk_mesh.cpp)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/vk_ext_mesh_shader.h)
+list(REMOVE_ITEM GL_SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/vk_ext_mesh_shader.cpp)
 
 #####################################################################################
 # common source code needed for this sample

@@ -21,7 +21,7 @@
 #include "renderer.hpp"
 #include "resources_vk.hpp"
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 
 #include <nvmath/nvmath_glsltypes.h>
 
@@ -38,16 +38,16 @@ class RendererVK : public Renderer
 public:
   class TypeCmd : public Renderer::Type
   {
-    bool        isAvailable(const nvvk::Context* context) const { return ResourcesVK::isAvailable(); }
-    const char* name() const { return "VK standard"; }
-    Renderer*   create() const
+    bool                      isAvailable(const nvvk::Context* context) const override { return true; }
+    [[nodiscard]] const char* name() const override { return "VK standard"; }
+    [[nodiscard]] Renderer*   create() const override
     {
-      RendererVK* renderer = new RendererVK();
+      auto* renderer = new RendererVK();
       return renderer;
     }
-    unsigned int priority() const { return 10; }
+    [[nodiscard]] unsigned int priority() const override { return 10; }
 
-    Resources* resources() { return ResourcesVK::get(); }
+    Resources* resources() override { return ResourcesVK::get(); }
   };
 
 
@@ -57,17 +57,17 @@ public:
   void draw(const FrameConfig& global) override;
 
 
-  RendererVK() {}
+  RendererVK() = default;
 
 private:
-  const RenderList* NV_RESTRICT m_list;
-  ResourcesVK* NV_RESTRICT m_resources;
-  Config                   m_config;
+  const RenderList* NV_RESTRICT m_list{};
+  ResourcesVK* NV_RESTRICT      m_resources{};
+  Config                        m_config;
 
-  VkCommandPool   m_cmdPool;
-  VkCommandBuffer m_cmdBuffers[2];
-  size_t          m_fboChangeID;
-  size_t          m_pipeChangeID;
+  VkCommandPool   m_cmdPool{};
+  VkCommandBuffer m_cmdBuffers[2]{};
+  size_t          m_fboChangeID{};
+  size_t          m_pipeChangeID{};
 
   void GenerateCmdBuffers()
   {
@@ -77,7 +77,7 @@ private:
     const ResourcesVK* NV_RESTRICT res     = m_resources;
     const CadSceneVK&              sceneVK = res->m_scene;
 
-    const ResourcesVK::DrawSetup& setup = res->m_setupRegular;
+    const ResourcesVK::DrawSetup& setup = res->m_setupStandard;
 
     VkCommandBuffer cmd = res->createCmdBuffer(m_cmdPool, false, false, true);
     res->cmdDynamicState(cmd);
@@ -96,11 +96,8 @@ private:
       {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.pipeline);
 
-        if(first)
-        {
-          vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_SCENE, 1,
-                                  setup.container.at(DSET_SCENE).getSets(), 0, nullptr);
-        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_SCENE, 1,
+                                setup.container.at(DSET_SCENE).getSets(), 0, nullptr);
 
         first = false;
       }
@@ -188,6 +185,15 @@ void RendererVK::draw(const FrameConfig& global)
     vkCmdUpdateBuffer(primary, res->m_common.viewBuffer, 0, sizeof(SceneData), (const uint32_t*)&global.sceneUbo);
     vkCmdUpdateBuffer(primary, res->m_common.statsBuffer, 0, sizeof(CullStats), (const uint32_t*)&m_list->m_stats);
     res->cmdPipelineBarrier(primary);
+    {
+      VkMemoryBarrier memBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      memBarrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+      memBarrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+      vkCmdPipelineBarrier(primary, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           (global.meshletBoxes ? VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT : 0)
+                               | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                           VK_FALSE, 1, &memBarrier, 0, nullptr, 0, nullptr);
+    }
 
     // clear via pass
     res->cmdBeginRenderPass(primary, true, true);

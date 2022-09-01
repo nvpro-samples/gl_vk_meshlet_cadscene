@@ -35,6 +35,8 @@
 #include <nvvk/memorymanagement_vk.hpp>
 #include <nvvk/renderpasses_vk.hpp>
 
+#include "vk_ext_mesh_shader.h"
+
 class NVPWindow;
 
 #define DSET_COUNT 3
@@ -53,10 +55,10 @@ public:
     bool vsync        = false;
     int  msaa         = 0;
 
-    VkViewport viewport;
-    VkViewport viewportUI;
-    VkRect2D   scissor;
-    VkRect2D   scissorUI;
+    VkViewport viewport{};
+    VkViewport viewportUI{};
+    VkRect2D   scissor{};
+    VkRect2D   scissorUI{};
 
     VkRenderPass passClear    = VK_NULL_HANDLE;
     VkRenderPass passPreserve = VK_NULL_HANDLE;
@@ -79,83 +81,90 @@ public:
   struct Common
   {
     nvvk::AllocationID     viewAID;
-    VkBuffer               viewBuffer;
-    VkDescriptorBufferInfo viewInfo;
+    VkBuffer               viewBuffer{};
+    VkDescriptorBufferInfo viewInfo{};
 
     nvvk::AllocationID     statsAID;
-    VkBuffer               statsBuffer;
-    VkDescriptorBufferInfo statsInfo;
+    VkBuffer               statsBuffer{};
+    VkDescriptorBufferInfo statsInfo{};
 
     nvvk::AllocationID     statsReadAID;
-    VkBuffer               statsReadBuffer;
-    VkDescriptorBufferInfo statsReadInfo;
+    VkBuffer               statsReadBuffer{};
+    VkDescriptorBufferInfo statsReadInfo{};
+  };
+
+  struct MeshShaderModuleIDs
+  {
+    nvvk::ShaderModuleID task;
+    nvvk::ShaderModuleID mesh_fragment;
+    nvvk::ShaderModuleID mesh;
+    nvvk::ShaderModuleID task_mesh;
+    nvvk::ShaderModuleID cull_mesh;
+    nvvk::ShaderModuleID cull_task_mesh;
   };
 
   struct ShaderModuleIDs
   {
-    nvvk::ShaderModuleID object_vertex;
-    nvvk::ShaderModuleID object_fragment;
+    nvvk::ShaderModuleID standard_vertex;
+    nvvk::ShaderModuleID standard_fragment;
 
-    nvvk::ShaderModuleID object_task;
-
-    nvvk::ShaderModuleID object_mesh_fragment;
-    nvvk::ShaderModuleID object_mesh;
-    nvvk::ShaderModuleID object_task_mesh;
-    nvvk::ShaderModuleID object_cull_mesh;
-    nvvk::ShaderModuleID object_cull_task_mesh;
+    MeshShaderModuleIDs meshNV;
+    MeshShaderModuleIDs meshEXT;
 
     nvvk::ShaderModuleID bbox_vertex;
     nvvk::ShaderModuleID bbox_geometry;
     nvvk::ShaderModuleID bbox_fragment;
   };
 
+
   struct DrawSetup
   {
     VkPipeline pipeline     = VK_NULL_HANDLE;
     VkPipeline pipelineTask = VK_NULL_HANDLE;
 
-    VkPipeline                                pipelineCull     = VK_NULL_HANDLE;
-    VkPipeline                                pipelineCullTask = VK_NULL_HANDLE;
+    VkPipeline pipelineCull     = VK_NULL_HANDLE;
+    VkPipeline pipelineCullTask = VK_NULL_HANDLE;
+
     nvvk::TDescriptorSetContainer<DSET_COUNT> container;
   };
 
-
-  bool m_withinFrame       = false;
-  bool m_nativeMeshSupport = false;
+  bool m_withinFrame     = false;
+  bool m_supportsMeshNV  = false;
+  bool m_supportsMeshEXT = false;
 
   nvvk::ShaderModuleManager m_shaderManager;
   ShaderModuleIDs           m_shaders;
 
-  const nvvk::SwapChain* m_swapChain;
+  const nvvk::SwapChain* m_swapChain{};
   const nvvk::Context*   m_context = nullptr;
 
   VkDevice         m_device = VK_NULL_HANDLE;
-  VkPhysicalDevice m_physical;
-  VkQueue          m_queue;
-  uint32_t         m_queueFamily;
+  VkPhysicalDevice m_physical{};
+  VkQueue          m_queue{};
+  uint32_t         m_queueFamily{};
 
   nvvk::DeviceMemoryAllocator m_memAllocator;
   nvvk::RingFences            m_ringFences;
   nvvk::RingCommandPool       m_ringCmdPool;
 
-
   nvvk::BatchSubmission m_submission;
-  bool                  m_submissionWaitForRead;
+  bool                  m_submissionWaitForRead{};
 
   FrameBuffer m_framebuffer;
   Common      m_common;
   CadSceneVK  m_scene;
 
-  DrawSetup m_setupRegular;
+  DrawSetup m_setupStandard;
   DrawSetup m_setupBbox;
-  DrawSetup m_setupMeshTask;
+  DrawSetup m_setupMeshNV;
+  DrawSetup m_setupMeshEXT;
 
   nvvk::ProfilerVK m_profilerVK;
 
-  size_t m_pipeChangeID;
-  size_t m_fboChangeID;
+  size_t m_pipeChangeID{};
+  size_t m_fboChangeID{};
 
-  ResourcesVK() {}
+  ResourcesVK() = default;
 
   static ResourcesVK* get()
   {
@@ -163,7 +172,6 @@ public:
 
     return &res;
   }
-  static bool isAvailable();
 
   bool init(const nvvk::Context* context, const nvvk::SwapChain* swapChain, nvh::Profiler* profiler) override;
   void deinit() override;
@@ -172,7 +180,7 @@ public:
 
   void initPipes();
   void deinitPipes();
-  bool hasPipes() { return m_setupRegular.pipeline != 0; }
+  bool hasPipes() const { return m_setupStandard.pipeline != nullptr; }
 
   bool initPrograms(const std::string& path, const std::string& prepend) override;
   void reloadPrograms(const std::string& prepend) override;
@@ -199,8 +207,8 @@ public:
 
   //////////////////////////////////////////////////////////////////////////
 
-  VkRenderPass createPass(bool clear, int msaa);
-  VkRenderPass createPassUI(int msaa);
+  VkRenderPass createPass(bool clear, int msaa) const;
+  VkRenderPass createPassUI(int msaa) const;
 
   VkCommandBuffer createCmdBuffer(VkCommandPool pool, bool singleshot, bool primary, bool secondaryInClear) const;
   VkCommandBuffer createTempCmdBuffer(bool primary = true, bool secondaryInClear = false);
@@ -216,17 +224,17 @@ public:
   // synchronizes to queue
   void resetTempResources();
 
-  void cmdBeginRenderPass(VkCommandBuffer cmd, bool clear, bool hasSecondary = false) const;
-  void cmdPipelineBarrier(VkCommandBuffer cmd) const;
-  void cmdDynamicState(VkCommandBuffer cmd) const;
-  void cmdImageTransition(VkCommandBuffer    cmd,
-                          VkImage            img,
-                          VkImageAspectFlags aspects,
-                          VkAccessFlags      src,
-                          VkAccessFlags      dst,
-                          VkImageLayout      oldLayout,
-                          VkImageLayout      newLayout) const;
-  void cmdBegin(VkCommandBuffer cmd, bool singleshot, bool primary, bool secondaryInClear) const;
+  void        cmdBeginRenderPass(VkCommandBuffer cmd, bool clear, bool hasSecondary = false) const;
+  void        cmdPipelineBarrier(VkCommandBuffer cmd) const;
+  void        cmdDynamicState(VkCommandBuffer cmd) const;
+  static void cmdImageTransition(VkCommandBuffer    cmd,
+                                 VkImage            img,
+                                 VkImageAspectFlags aspects,
+                                 VkAccessFlags      src,
+                                 VkAccessFlags      dst,
+                                 VkImageLayout      oldLayout,
+                                 VkImageLayout      newLayout);
+  void        cmdBegin(VkCommandBuffer cmd, bool singleshot, bool primary, bool secondaryInClear) const;
 };
 
 }  // namespace meshlettest

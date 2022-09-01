@@ -44,6 +44,7 @@ public:
     int32_t  indexThreshold;
     uint32_t taskMinMeshlets;
     uint32_t taskNumMeshlets = 32;
+    uint32_t meshNumMeshlets = 1;
   };
 
   struct DrawItem

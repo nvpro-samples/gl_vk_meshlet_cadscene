@@ -18,33 +18,22 @@
  */
 
 
-#version 450
+#version 460
 
-#ifdef VULKAN 
   #extension GL_GOOGLE_include_directive : enable
   #extension GL_EXT_control_flow_attributes: require
   #define UNROLL_LOOP [[unroll]]
-#else
-  #extension GL_ARB_shading_language_include : enable
-  #pragma optionNV(unroll all)  
-  #define UNROLL_LOOP
-#endif
+
 
 #include "config.h"
 
 //////////////////////////////////////
 
-  #extension GL_NV_mesh_shader : require
+  #extension GL_EXT_mesh_shader : require
   
 //////////////////////////////////////
 
-#if IS_VULKAN
-  // one of them provides uint8_t
   #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-#else
-  #extension GL_NV_gpu_shader5 : require
-  #extension GL_NV_bindless_texture : require
-#endif
 
   #extension GL_KHR_shader_subgroup_basic : require
   #extension GL_KHR_shader_subgroup_ballot : require
@@ -55,19 +44,28 @@
 #include "common.h"
 
 /////////////////////////////////////////////////////////////////////////
+// TASK CONFIG
 
-#define WORKGROUP_SIZE  TASK_SUBGROUP_SIZE
+// see Sample::getShaderPrepend() how these are computed
+const uint WORKGROUP_SIZE = EXT_TASK_SUBGROUP_COUNT * EXT_TASK_SUBGROUP_SIZE;
 
 layout(local_size_x=WORKGROUP_SIZE) in;
+
+// The workgroup size of the shader may not have enough threads
+// to do all the work in a unique thread.
+// Therefore we might need to loop to process all the work.
+
+const uint TASK_MESHLET_ITERATIONS = ((NVMESHLET_PER_TASK + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE);
+
 
 /////////////////////////////////////
 // UNIFORMS
 
-#if IS_VULKAN
-
   layout(push_constant) uniform pushConstant{
+    // x: mesh, y: prim, z: 0, w: vertex
     uvec4     geometryOffsets;
-    uvec4     assigns;
+    // x: meshFirst, y: meshMax
+    uvec4     drawRange;
   };
 
   layout(std140, binding = SCENE_UBO_VIEW, set = DSET_SCENE) uniform sceneBuffer {
@@ -91,34 +89,6 @@ layout(local_size_x=WORKGROUP_SIZE) in;
   layout(binding=GEOMETRY_TEX_VBO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texVbo;
   layout(binding=GEOMETRY_TEX_ABO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texAbo;
 
-#else
-
-  layout(location = 0) uniform uvec4 geometryOffsets;
-  // x: mesh, y: prim, z: 0, w: vertex
-
-  layout(location = 1) uniform uvec4 assigns;
-
-  layout(std140, binding = UBO_SCENE_VIEW) uniform sceneBuffer {
-    SceneData scene;
-  };
-  layout(std140, binding = SSBO_SCENE_STATS) buffer statsBuffer{
-    CullStats stats;
-  };
-
-  layout(std140, binding = UBO_OBJECT) uniform objectBuffer {
-    ObjectData object;
-  };
-
-  // keep in sync with binding order defined via GEOMETRY_
-  layout(std140, binding = UBO_GEOMETRY) uniform geometryBuffer{
-    uvec4*          meshletDescs;
-    uvec2*          primIndices;
-    samplerBuffer   texVbo;
-    samplerBuffer   texAbo;
-  };
-  
-#endif
-
 //////////////////////////////////////////////////////////////////////////
 // INPUT
 
@@ -128,61 +98,84 @@ uint laneID = gl_LocalInvocationID.x;
 //////////////////////////////////////////////////////////////////////////
 // OUTPUT
 
-  // on NVIDIA hw the task-shader output should stay below
-  // 108 bytes to stay on a very fast path. 236 bytes typically is
-  // okay as well, but more is not recommended.
-  
-taskNV out Task
+
+struct Task
 {
   uint      baseID;
   uint8_t   deltaIDs[NVMESHLET_PER_TASK];
-} OUT;
+};
+
+taskPayloadSharedEXT Task OUT;
 
 //////////////////////////////////////////////////////////////////////////
 // UTILS
 
 #include "nvmeshlet_utils.glsl"
 
-  // The workgroup size of the shader may not have enough threads
-  // to do all the work in a unique thread.
-  // Therefore we might need to loop to process all the work.
-
-  #define TASK_MESHLET_ITERATIONS   ((NVMESHLET_PER_TASK + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE)
-
 /////////////////////////////////////////////////
 // EXECUTION
 
+#define BARRIER() \
+  memoryBarrierShared(); \
+  barrier();
+
+#if EXT_TASK_SUBGROUP_COUNT > 1
+  shared uint s_outMeshletsCount;
+#endif
+
 void main()
 {
-  baseID += assigns.x;
+#if EXT_TASK_SUBGROUP_COUNT > 1
+  if (laneID == 0) {
+    s_outMeshletsCount = 0;
+  }
+  BARRIER();
+#endif
+
+  baseID += drawRange.x;
   
-  uint numOutTasks = 0;
+  uint outMeshletsCount = 0;
   
   UNROLL_LOOP
   for (uint i = 0; i < TASK_MESHLET_ITERATIONS; i++)
   {
     uint  meshletLocal  = laneID + i * WORKGROUP_SIZE;
     uint  meshletGlobal = baseID + meshletLocal;
-    uvec4 desc          = meshletDescs[min(meshletGlobal, assigns.y) + geometryOffsets.x];
+    uvec4 desc          = meshletDescs[min(meshletGlobal, drawRange.y) + geometryOffsets.x];
     
-    bool render = !(meshletGlobal > assigns.y || earlyCull(desc, object));
+    bool render = !(meshletGlobal > drawRange.y || earlyCull(desc, object));
 
-    uvec4 voteTasks = subgroupBallot(render);
-    uint  numTasks  = subgroupBallotBitCount(voteTasks);
-    uint idxOffset  = subgroupBallotExclusiveBitCount(voteTasks) + numOutTasks;
+    uvec4 voteMeshlets = subgroupBallot(render);
+    uint  numMeshlets  = subgroupBallotBitCount(voteMeshlets);
+    
+  #if EXT_TASK_SUBGROUP_COUNT > 1
+    if (gl_SubgroupInvocationID == 0) {
+      outMeshletsCount = atomicAdd(s_outMeshletsCount, numMeshlets);
+    }
+    outMeshletsCount = subgroupBroadcastFirst(outMeshletsCount);
+  #endif
+    
+    uint idxOffset  = subgroupBallotExclusiveBitCount(voteMeshlets) + outMeshletsCount;
     if (render) 
     {
       OUT.deltaIDs[idxOffset] = uint8_t(meshletLocal);
     }
-    
-    numOutTasks += numTasks;
+  #if EXT_TASK_SUBGROUP_COUNT == 1
+    outMeshletsCount += numMeshlets;
+  #endif
   }
+  
+#if EXT_TASK_SUBGROUP_COUNT > 1
+  BARRIER();
+  outMeshletsCount = s_outMeshletsCount;
+#endif
 
   if (laneID == 0) {
-    gl_TaskCountNV = numOutTasks;
-    OUT.baseID     = baseID;
-    #if USE_STATS
-      atomicAdd(stats.tasksOutput, numOutTasks);
-    #endif
+    OUT.baseID = baseID;
+  #if USE_STATS
+    atomicAdd(stats.tasksOutput, outMeshletsCount);
+  #endif
   }
+  
+  EmitMeshTasksEXT(outMeshletsCount, 1, 1);
 }

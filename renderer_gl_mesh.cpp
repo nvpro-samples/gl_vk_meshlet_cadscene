@@ -19,7 +19,7 @@
 
 
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 
 #include <nvmath/nvmath_glsltypes.h>
 
@@ -38,34 +38,34 @@ class RendererMeshGL : public Renderer
 public:
   class Type : public Renderer::Type
   {
-    bool        isAvailable(const nvgl::ContextWindow* contextWindow) const { return has_GL_NV_mesh_shader != 0; }
-    const char* name() const { return "GL mesh"; }
-    Renderer*   create() const
+    bool        isAvailable(const nvgl::ContextWindow* contextWindow) const override { return has_GL_NV_mesh_shader != 0; }
+    [[nodiscard]] const char* name() const override { return "GL mesh nv"; }
+    [[nodiscard]] Renderer*   create() const override
     {
-      RendererMeshGL* renderer = new RendererMeshGL();
+      auto* renderer = new RendererMeshGL();
       return renderer;
     }
 
-    Resources* resources() { return ResourcesGL::get(); }
+    Resources* resources() override { return ResourcesGL::get(); }
 
-    unsigned int priority() const { return 4; }
+    [[nodiscard]] unsigned int priority() const override { return 4; }
   };
   class TypeVbum : public Renderer::Type
   {
-    bool isAvailable(const nvgl::ContextWindow* contextWindow) const
+    bool isAvailable(const nvgl::ContextWindow* contextWindow) const override
     {
       return has_GL_NV_vertex_buffer_unified_memory && has_GL_NV_uniform_buffer_unified_memory && has_GL_NV_mesh_shader;
     }
-    const char* name() const { return "GL mesh nvbindless"; }
-    Renderer*   create() const
+    [[nodiscard]] const char* name() const override { return "GL mesh nv nvbindless"; }
+    [[nodiscard]] Renderer*   create() const override
     {
-      RendererMeshGL* renderer = new RendererMeshGL();
+      auto* renderer = new RendererMeshGL();
       renderer->m_bindless     = true;
       return renderer;
     }
-    unsigned int priority() const { return 4; }
+    [[nodiscard]] unsigned int priority() const override { return 4; }
 
-    Resources* resources() { return ResourcesGL::get(); }
+    Resources* resources() override { return ResourcesGL::get(); }
   };
 
 public:
@@ -76,8 +76,8 @@ public:
   bool m_bindless = false;
 
 private:
-  const RenderList* NV_RESTRICT m_list;
-  ResourcesGL* NV_RESTRICT m_resources;
+  const RenderList* NV_RESTRICT m_list{};
+  ResourcesGL* NV_RESTRICT m_resources{};
   Config                   m_config;
 };
 
@@ -174,10 +174,8 @@ void RendererMeshGL::draw(const FrameConfig& global)
     GLuint meshNoTaskProgram = m_config.useCulling ? res->m_programs.draw_object_cull_mesh : res->m_programs.draw_object_mesh;
 
     bool first = true;
-    for(int i = 0; i < m_list->m_drawItems.size(); i++)
+    for(const auto & di : m_list->m_drawItems)
     {
-      const RenderList::DrawItem& di = m_list->m_drawItems[i];
-
       bool useTask = di.task;
 
       if(first || useTask != lastTask)
@@ -240,15 +238,11 @@ void RendererMeshGL::draw(const FrameConfig& global)
         statsMatrix++;
       }
 
-      if(useTask)
-      {
-        glUniform4ui(1, di.meshlet.offset, di.meshlet.offset + di.meshlet.count - 1, 0, 0);
-      }
-
-      uint32_t offset = useTask ? 0 : di.meshlet.offset;
-      uint32_t count  = useTask ? ((di.meshlet.count + m_list->m_config.taskNumMeshlets - 1) / m_list->m_config.taskNumMeshlets) : di.meshlet.count;
-
-      glDrawMeshTasksNV(offset, count);
+      glUniform4ui(1, di.meshlet.offset, di.meshlet.offset + di.meshlet.count - 1, 0, 0);
+      uint32_t count = useTask ?
+                           ((di.meshlet.count + m_list->m_config.taskNumMeshlets - 1) / m_list->m_config.taskNumMeshlets) :
+                           ((di.meshlet.count + m_list->m_config.meshNumMeshlets - 1) / m_list->m_config.meshNumMeshlets);
+      glDrawMeshTasksNV(0, count);
 
       statsDraw++;
     }

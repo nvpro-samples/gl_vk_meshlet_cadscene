@@ -20,33 +20,23 @@
 
 // ide.config.nvglslcchip="tu100"
 
-#version 450
+#version 460
 
-#ifdef VULKAN
   #extension GL_GOOGLE_include_directive : enable
   #extension GL_EXT_control_flow_attributes: require
   #define UNROLL_LOOP [[unroll]]
-#else
-  #extension GL_ARB_shading_language_include : enable
-  #pragma optionNV(unroll all)
-  #define UNROLL_LOOP
-#endif
+
 
 #include "config.h"
 
 //////////////////////////////////////
 
-  #extension GL_NV_mesh_shader : require
+  #extension GL_EXT_mesh_shader : require
 
 //////////////////////////////////////
 
-#if IS_VULKAN
-  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-#else
-  #extension GL_NV_gpu_shader5 : require
-  #extension GL_NV_bindless_texture : require
-#endif
-
+  #extension GL_EXT_shader_explicit_arithmetic_types_int8  : require
+  #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 //////////////////////////////////////
 
@@ -55,11 +45,22 @@
 //////////////////////////////////////////////////
 // MESH CONFIG
 
-#define WORKGROUP_SIZE    MESH_SUBGROUP_SIZE
+// see Sample::getShaderPrepend() how these are computed
+const uint WORKGROUP_SIZE = EXT_MESH_SUBGROUP_COUNT * EXT_MESH_SUBGROUP_SIZE;
 
 layout(local_size_x=WORKGROUP_SIZE) in;
 layout(max_vertices=NVMESHLET_VERTEX_COUNT, max_primitives=NVMESHLET_PRIMITIVE_COUNT) out;
 layout(triangles) out;
+
+// The workgroup size of the shader may not have enough threads
+// to do all the work in a unique thread.
+// Therefore we might need to loop to process all the work.
+// Looping can have the benefit that we can amortize some registers
+// that are common to all threads. However, it may also introduce
+// more registers. 
+
+const uint MESHLET_VERTEX_ITERATIONS    = ((NVMESHLET_VERTEX_COUNT    + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE);
+const uint MESHLET_PRIMITIVE_ITERATIONS = ((NVMESHLET_PRIMITIVE_COUNT + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE);
 
 // task shader is used in advance, doing early cluster culling
 #ifndef USE_TASK_STAGE
@@ -69,13 +70,13 @@ layout(triangles) out;
 /////////////////////////////////////
 // UNIFORMS
 
-#if IS_VULKAN
-
   layout(push_constant) uniform pushConstant{
-    uvec4     geometryOffsets;
     // x: mesh, y: prim, z: 0, w: vertex
+    uvec4     geometryOffsets;
+    // x: meshFirst, y: meshMax
+    uvec4     drawRange;
   };
-
+  
   layout(std140, binding = SCENE_UBO_VIEW, set = DSET_SCENE) uniform sceneBuffer {
     SceneData scene;
   };
@@ -91,43 +92,14 @@ layout(triangles) out;
     uvec4 meshletDescs[];
   };
   layout(std430, binding = GEOMETRY_SSBO_PRIM, set = DSET_GEOMETRY) buffer primIndexBuffer1 {
-    uint  primIndices1[];
+    uint    primIndices1[];
   };
   layout(std430, binding = GEOMETRY_SSBO_PRIM, set = DSET_GEOMETRY) buffer primIndexBuffer2 {
-    uvec2 primIndices2[];
+    uint8_t primIndices_u8[];
   };
 
   layout(binding=GEOMETRY_TEX_VBO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texVbo;
   layout(binding=GEOMETRY_TEX_ABO,  set=DSET_GEOMETRY)  uniform samplerBuffer  texAbo;
-
-#else
-
-  layout(location = 0) uniform uvec4 geometryOffsets;
-  // x: mesh, y: prim, z: 0, w: vertex
-
-  layout(std140, binding = UBO_SCENE_VIEW) uniform sceneBuffer {
-    SceneData scene;
-  };
-  layout(std140, binding = SSBO_SCENE_STATS) buffer statsBuffer{
-    CullStats stats;
-  };
-
-  layout(std140, binding = UBO_OBJECT) uniform objectBuffer {
-    ObjectData object;
-  };
-
-  // keep in sync with binding order defined via GEOMETRY_
-  layout(std140, binding = UBO_GEOMETRY) uniform geometryBuffer{
-    uvec4*          meshletDescs;
-    uvec2*          primIndices;
-    samplerBuffer   texVbo;
-    samplerBuffer   texAbo;
-  };
-
-  #define primIndices1  ((uint*)primIndices)
-  #define primIndices2  primIndices
-
-#endif
 
 /////////////////////////////////////////////////
 
@@ -137,14 +109,16 @@ layout(triangles) out;
 // MESH INPUT
 
 #if USE_TASK_STAGE
-  taskNV in Task {
+  struct Task {
     uint    baseID;
     uint8_t deltaIDs[NVMESHLET_PER_TASK];
-  } IN;
-  // gl_WorkGroupID.x runs from [0 .. parentTask.gl_TaskCountNV - 1]
+  };
+  taskPayloadSharedEXT Task IN;
+  
+  // gl_WorkGroupID.x runs from [0 .. parentTask.groupCountX - 1]
   uint meshletID = IN.baseID + IN.deltaIDs[gl_WorkGroupID.x];
 #else
-  uint meshletID = gl_WorkGroupID.x;
+  uint meshletID = gl_WorkGroupID.x + drawRange.x;
 #endif
   uint laneID = gl_LocalInvocationID.x;
 
@@ -208,7 +182,7 @@ vec4 getExtra( uint vidx, uint xtra ){
 #endif
 
 //////////////////////////////////////////////////
-// EXECUTION
+// VERTEX EXECUTION
 
 // This is the code that is normally done in the vertex-shader
 // "vidx" is what gl_VertexIndex would be
@@ -223,8 +197,11 @@ vec4 procVertex(const uint vert, uint vidx)
   vec3 oPos = getPosition(vidx);
   vec3 wPos = (object.worldMatrix  * vec4(oPos,1)).xyz;
   vec4 hPos = (scene.viewProjMatrix * vec4(wPos,1));
+  
+  // only early out if we could make out-of-bounds write
+  if ((WORKGROUP_SIZE * MESHLET_VERTEX_ITERATIONS > NVMESHLET_VERTEX_COUNT) && vert >= NVMESHLET_VERTEX_COUNT) return hPos;
 
-  gl_MeshVerticesNV[vert].gl_Position = hPos;
+  gl_MeshVerticesEXT[vert].gl_Position = hPos;
 
 #if !SHOW_PRIMIDS
 #if USE_BARYCENTRIC_SHADING
@@ -240,17 +217,17 @@ vec4 procVertex(const uint vert, uint vidx)
 #if IS_VULKAN
   // spir-v annoyance, doesn't unroll the loop and therefore cannot derive the number of clip distances used
   #if NUM_CLIPPING_PLANES > 0
-  gl_MeshVerticesNV[vert].gl_ClipDistance[0] = dot(scene.wClipPlanes[0], vec4(wPos,1));
+  gl_MeshVerticesEXT[vert].gl_ClipDistance[0] = dot(scene.wClipPlanes[0], vec4(wPos,1));
   #endif
   #if NUM_CLIPPING_PLANES > 1
-  gl_MeshVerticesNV[vert].gl_ClipDistance[1] = dot(scene.wClipPlanes[1], vec4(wPos,1));
+  gl_MeshVerticesEXT[vert].gl_ClipDistance[1] = dot(scene.wClipPlanes[1], vec4(wPos,1));
   #endif
   #if NUM_CLIPPING_PLANES > 2
-  gl_MeshVerticesNV[vert].gl_ClipDistance[2] = dot(scene.wClipPlanes[2], vec4(wPos,1));
+  gl_MeshVerticesEXT[vert].gl_ClipDistance[2] = dot(scene.wClipPlanes[2], vec4(wPos,1));
   #endif
 #else
   for (int i = 0; i < NUM_CLIPPING_PLANES; i++){
-    gl_MeshVerticesNV[vert].gl_ClipDistance[i] = dot(scene.wClipPlanes[i], vec4(wPos,1));
+    gl_MeshVerticesEXT[vert].gl_ClipDistance[i] = dot(scene.wClipPlanes[i], vec4(wPos,1));
   }
 #endif
 #endif
@@ -264,6 +241,10 @@ void procAttributes(const uint vert, uint vidx)
 #if !SHOW_PRIMIDS && !USE_BARYCENTRIC_SHADING
   vec3 oNormal = getNormal(vidx);
   vec3 wNormal = mat3(object.worldMatrixIT) * oNormal;
+  
+  // only early out if we could make out-of-bounds write
+  if ((WORKGROUP_SIZE * MESHLET_VERTEX_ITERATIONS > NVMESHLET_VERTEX_COUNT) && vert >= NVMESHLET_VERTEX_COUNT) return;
+  
   OUT[vert].wNormal = wNormal;
   #if VERTEX_EXTRAS_COUNT
     UNROLL_LOOP
@@ -278,16 +259,6 @@ void procAttributes(const uint vert, uint vidx)
 //////////////////////////////////////////////////
 // MESH EXECUTION
 
-  // The workgroup size of the shader may not have enough threads
-  // to do all the work in a unique thread.
-  // Therefore we might need to loop to process all the work.
-  // Looping can have the benefit that we can amortize some registers
-  // that are common to all threads. However, it may also introduce
-  // more registers. 
-  
-  #define MESHLET_INDICES_ITERATIONS    ((NVMESHLET_PRIMITIVE_COUNT * 3 + WORKGROUP_SIZE * NVMESHLET_INDICES_PER_FETCH - 1) / (WORKGROUP_SIZE * NVMESHLET_INDICES_PER_FETCH))
-  #define MESHLET_VERTEX_ITERATIONS     ((NVMESHLET_VERTEX_COUNT    + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE)
-  #define MESHLET_PRIMITIVE_ITERATIONS  ((NVMESHLET_PRIMITIVE_COUNT + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE)
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -319,81 +290,68 @@ void main()
 
   uint primCount = primMax + 1;
   uint vertCount = vertMax + 1;
+  
+  
+  SetMeshOutputsEXT(vertCount, primCount);
 
   // VERTEX PROCESSING
-  
-  UNROLL_LOOP
-  for (uint i = 0; i < uint(MESHLET_VERTEX_ITERATIONS); i++)
   {
-    uint vert = laneID + i * WORKGROUP_SIZE;
-    uint vertLoad = min(vert, vertMax);
-
+    UNROLL_LOOP
+    for (uint i = 0; i < uint(MESHLET_VERTEX_ITERATIONS); i++)
     {
-      // the meshlet contains two set of indices
-      // - vertex indices (which can be either 16 or 32 bit)
-      //   are loaded here. The idx is manipulated
-      //   as one 32 bit value contains either two 16 bits
-      //   or just a single 32 bit.
-      //   The bit shifting handles the 16 or 32 bit decoding
-      //   
-      // - primitive (triangle) indices are loaded
-      //   later in bulk, see PRIMITIVE TOPOLOGY
-    
-      uint idx   = (vertLoad) >> (vidxDiv-1);
-      uint shift = (vertLoad) &  (vidxDiv-1);
+      uint vert = laneID + i * WORKGROUP_SIZE;
+      uint vertLoad = min(vert, vertMax);
 
-      uint vidx = primIndices1[idx + vidxStart];
-      vidx <<= vidxBits * (1-shift);
-      vidx >>= vidxBits;
-
-      vidx += geometryOffsets.w;
+      {
+        // the meshlet contains two set of indices
+        // - vertex indices (which can be either 16 or 32 bit)
+        //   are loaded here. The idx is manipulated
+        //   as one 32 bit value contains either two 16 bits
+        //   or just a single 32 bit.
+        //   The bit shifting handles the 16 or 32 bit decoding
+        //   
+        // - primitive (triangle) indices are loaded
+        //   later in bulk, see PRIMITIVE TOPOLOGY
       
-      // here we do the work typically done in the vertex-shader
-      procVertex(vert, vidx);
-      procAttributes(vert, vidx);
+        uint idx   = (vertLoad) >> (vidxDiv-1);
+        uint shift = (vertLoad) &  (vidxDiv-1);
+
+        uint vidx = primIndices1[idx + vidxStart];
+        vidx <<= vidxBits * (1-shift);
+        vidx >>= vidxBits;
+
+        vidx += geometryOffsets.w;
+        
+        // here we do the work typically done in the vertex-shader
+        procVertex(vert, vidx);
+        procAttributes(vert, vidx);
+      }
     }
   }
 
   // PRIMITIVE TOPOLOGY
   {
-    uint readBegin = primStart / 2;
-    uint readIndex = primCount * 3 - 1;
-    uint readMax   = readIndex / 8;
-    
-    // To speed up loading of the primitive (triangle) indices
-    // we load 64-bit per thread (NV hardware as fast paths
-    // to load aligned 64- and 128-bit values).
-    // MESHLET_INDICES_ITERATIONS is typically 1 as result.
-    // We also make use of a special intrinsic to distribute
-    // the index values into the gl_PrimitiveIndicesNV array.
-    //
-    // A bit of caution must be taken here, as we must ensure the indices
-    // written by the intrinsics fit within the "max_primitives" we
-    // declared at start.
-
-    UNROLL_LOOP
-    for (uint i = 0; i < uint(MESHLET_INDICES_ITERATIONS); i++)
-    {
-      uint read = laneID + i * WORKGROUP_SIZE;
-      uint readUsed = min(read, readMax);
-      uvec2 topology = primIndices2[readBegin + readUsed];
-      writePackedPrimitiveIndices4x8NV(readUsed * 8 + 0, topology.x);
-      writePackedPrimitiveIndices4x8NV(readUsed * 8 + 4, topology.y);
-    }
-  }
-  #if SHOW_PRIMIDS
-  {
+    uint readBegin = primStart * 4;
+  
     UNROLL_LOOP
     for (uint i = 0; i < uint(MESHLET_PRIMITIVE_ITERATIONS); i++)
     {
-      uint prim = laneID + i * WORKGROUP_SIZE;
+      uint prim     = laneID + i * WORKGROUP_SIZE;
+      uint primRead = min(prim, primMax);
+      
+      uvec3 indices = uvec3(primIndices_u8[readBegin + primRead * 3 + 0],
+                            primIndices_u8[readBegin + primRead * 3 + 1],
+                            primIndices_u8[readBegin + primRead * 3 + 2]);
+    
       if (prim <= primMax) {
+        gl_PrimitiveTriangleIndicesEXT[prim] = indices;
+      #if SHOW_PRIMIDS
         // let's compute some fake unique primitiveID
-        gl_MeshPrimitivesNV[prim].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + prim);
+        gl_MeshPrimitivesEXT[prim].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + prim);
+      #endif
       }
     }
   }
-  #endif
 
 #else
   #error "NVMESHLET_ENCODING not supported"
@@ -402,7 +360,7 @@ void main()
   ////////////////////////////////////////////
 
   if (laneID == 0) {
-    gl_PrimitiveCountNV = primCount;
+    //atomicMax(stats.debugA[0], WORKGROUP_SIZE);
   #if USE_STATS
     atomicAdd(stats.meshletsOutput, 1);
     atomicAdd(stats.trisOutput, primCount);

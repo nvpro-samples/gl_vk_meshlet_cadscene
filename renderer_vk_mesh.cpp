@@ -22,7 +22,7 @@
 #include "renderer.hpp"
 #include "resources_vk.hpp"
 #include <algorithm>
-#include <assert.h>
+#include <cassert>
 
 #include <nvh/nvprint.hpp>
 #include <nvmath/nvmath_glsltypes.h>
@@ -37,21 +37,45 @@ namespace meshlettest {
 
 class RendererMeshVK : public Renderer
 {
+private:
+  bool m_isNV = true;
+
 public:
-  class TypeCmd : public Renderer::Type
+  class TypeNV : public Renderer::Type
   {
-    bool        isAvailable(const nvvk::Context* context) const { return ResourcesVK::isAvailable() && context->hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME); }
-    const char* name() const { return "VK mesh"; }
-    Renderer*   create() const
+    bool isAvailable(const nvvk::Context* context) const override
     {
-      RendererMeshVK* renderer = new RendererMeshVK();
+      return context->hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME);
+    }
+    [[nodiscard]] const char* name() const override { return "VK mesh nv"; }
+    [[nodiscard]] Renderer*   create() const override
+    {
+      auto* renderer   = new RendererMeshVK();
+      renderer->m_isNV = true;
       return renderer;
     }
-    unsigned int priority() const { return 14; }
+    [[nodiscard]] unsigned int priority() const override { return 14; }
 
-    Resources* resources() { return ResourcesVK::get(); }
+    Resources* resources() override { return ResourcesVK::get(); }
   };
 
+  class TypeEXT : public Renderer::Type
+  {
+    bool isAvailable(const nvvk::Context* context) const override
+    {
+      return context->hasDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+    }
+    [[nodiscard]] const char* name() const override { return "VK mesh ext"; }
+    [[nodiscard]] Renderer*   create() const override
+    {
+      auto* renderer   = new RendererMeshVK();
+      renderer->m_isNV = false;
+      return renderer;
+    }
+    [[nodiscard]] unsigned int priority() const override { return 14; }
+
+    Resources* resources() override { return ResourcesVK::get(); }
+  };
 
 public:
   bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) override;
@@ -59,17 +83,17 @@ public:
   void draw(const FrameConfig& global) override;
 
 
-  RendererMeshVK() {}
+  RendererMeshVK() = default;
 
 private:
-  const RenderList* NV_RESTRICT m_list;
-  ResourcesVK* NV_RESTRICT m_resources;
-  Config                   m_config;
+  const RenderList* NV_RESTRICT m_list{};
+  ResourcesVK* NV_RESTRICT      m_resources{};
+  Config                        m_config;
 
-  VkCommandPool   m_cmdPool;
-  VkCommandBuffer m_cmdBuffers[2];  // scene + bboxes
-  size_t          m_fboChangeID;
-  size_t          m_pipeChangeID;
+  VkCommandPool   m_cmdPool{};
+  VkCommandBuffer m_cmdBuffers[2]{};  // scene + bboxes
+  size_t          m_fboChangeID{};
+  size_t          m_pipeChangeID{};
 
   void GenerateCmdBuffers()
   {
@@ -81,19 +105,19 @@ private:
     const ResourcesVK* NV_RESTRICT res     = m_resources;
     const CadSceneVK&              sceneVK = res->m_scene;
 
-    const ResourcesVK::DrawSetup& setup = res->m_setupMeshTask;
+    const ResourcesVK::DrawSetup& setup = m_isNV ? res->m_setupMeshNV : res->m_setupMeshEXT;
 
     VkCommandBuffer cmd = res->createCmdBuffer(m_cmdPool, false, false, true);
     res->cmdDynamicState(cmd);
 
-    int  lastMaterial = -1;
-    int  lastGeometry = -1;
-    int  lastMatrix   = -1;
-    int  lastChunk    = -1;
+    int lastMaterial = -1;
+    int lastGeometry = -1;
+    int lastMatrix   = -1;
+    int lastChunk    = -1;
 
-    bool lastTask     = true;
+    bool lastTask = true;
 
-    VkPipeline pipeline = m_config.useCulling ? setup.pipelineCull : setup.pipeline;
+    VkPipeline pipeline     = m_config.useCulling ? setup.pipelineCull : setup.pipeline;
     VkPipeline pipelineTask = m_config.useCulling ? setup.pipelineCullTask : setup.pipelineTask;
 
     uint32_t psoStats = 0;
@@ -130,7 +154,7 @@ private:
           vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, setup.container.getPipeLayout(), DSET_GEOMETRY,
                                   1, setup.container.at(DSET_GEOMETRY).getSets() + chunk, 0, nullptr);
 
-          lastChunk  = chunk;
+          lastChunk = chunk;
         }
 
         // we use the same vertex offset for both vbo and abo, our allocator should ensure this condition.
@@ -153,20 +177,28 @@ private:
         lastMatrix = di.matrixIndex;
       }
 
-      if(useTask)
       {
-        nvmath::uvec4 assigns;
-        assigns.x = di.meshlet.offset;
-        assigns.y = di.meshlet.offset + di.meshlet.count - 1;
-        assigns.z = 0;
-        assigns.w = 0;
-        vkCmdPushConstants(cmd, setup.container.getPipeLayout(), VK_SHADER_STAGE_TASK_BIT_NV,
-                           sizeof(uint32_t) * 4, sizeof(assigns), &assigns);
+        nvmath::uvec4 drawRange;
+        drawRange.x = di.meshlet.offset;
+        drawRange.y = di.meshlet.offset + di.meshlet.count - 1;
+        drawRange.z = 0;
+        drawRange.w = 0;
+        vkCmdPushConstants(cmd, setup.container.getPipeLayout(), VK_SHADER_STAGE_TASK_BIT_NV | VK_SHADER_STAGE_MESH_BIT_NV,
+                           sizeof(uint32_t) * 4, sizeof(drawRange), &drawRange);
       }
 
-      uint32_t count  = useTask ? ((di.meshlet.count + m_list->m_config.taskNumMeshlets - 1) / m_list->m_config.taskNumMeshlets) : di.meshlet.count;
-      uint32_t offset = useTask ? 0 : di.meshlet.offset;
-      vkCmdDrawMeshTasksNV(cmd, count, offset);
+      uint32_t count = useTask ?
+                           ((di.meshlet.count + m_list->m_config.taskNumMeshlets - 1) / m_list->m_config.taskNumMeshlets) :
+                           ((di.meshlet.count + m_list->m_config.meshNumMeshlets - 1) / m_list->m_config.meshNumMeshlets);
+
+      if(m_isNV)
+      {
+        vkCmdDrawMeshTasksNV(cmd, count, 0);
+      }
+      else
+      {
+        vkCmdDrawMeshTasksEXT(cmd, count, 1, 1);
+      }
     }
 
     vkEndCommandBuffer(cmd);
@@ -177,7 +209,7 @@ private:
     m_fboChangeID  = res->m_fboChangeID;
     m_pipeChangeID = res->m_pipeChangeID;
 
-    LOGI("cmdbuffer pso binds: %d\n", psoStats);
+    LOGI("cmdbuffer pso binds: %d\n", psoStats)
   }
 
   void DeleteCmdbuffers()
@@ -187,7 +219,8 @@ private:
 };
 
 
-static RendererMeshVK::TypeCmd s_type_cmdbuffer_vk;
+static RendererMeshVK::TypeNV  s_type_nv_vk;
+static RendererMeshVK::TypeEXT s_type_ext_vk;
 
 bool RendererMeshVK::init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config)
 {
@@ -229,7 +262,17 @@ void RendererMeshVK::draw(const FrameConfig& global)
 
     vkCmdUpdateBuffer(primary, res->m_common.viewBuffer, 0, sizeof(SceneData), (const uint32_t*)&global.sceneUbo);
     vkCmdUpdateBuffer(primary, res->m_common.statsBuffer, 0, sizeof(CullStats), (const uint32_t*)&m_list->m_stats);
-
+    {
+      VkMemoryBarrier memBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      memBarrier.srcAccessMask   = VK_ACCESS_TRANSFER_WRITE_BIT;
+      memBarrier.dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+      // EXT and NV alias to same pipeline stage bit values
+      vkCmdPipelineBarrier(primary, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           (global.meshletBoxes ? VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT : 0)
+                               | VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT
+                               | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                           VK_FALSE, 1, &memBarrier, 0, nullptr, 0, nullptr);
+    }
     res->cmdPipelineBarrier(primary);
     // clear via pass
     res->cmdBeginRenderPass(primary, true, true);

@@ -41,7 +41,8 @@
 //////////////////////////////////////
 
 #if IS_VULKAN
-  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+  #extension GL_EXT_shader_explicit_arithmetic_types_int8  : require
+  #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 #else
   #extension GL_NV_gpu_shader5 : require
   #extension GL_NV_bindless_texture : require
@@ -58,17 +59,29 @@
 //////////////////////////////////////////////////
 // MESH CONFIG
 
-#define WORKGROUP_SIZE    MESH_SUBGROUP_SIZE
+const uint WORKGROUP_SIZE = 32;
 
 layout(local_size_x=WORKGROUP_SIZE) in;
 layout(max_vertices=NVMESHLET_VERTEX_COUNT, max_primitives=NVMESHLET_PRIMITIVE_COUNT) out;
 layout(triangles) out;
+
+// The workgroup size of the shader may not have enough threads
+// to do all the work in a unique thread.
+// Therefore we might need to loop to process all the work.
+// Looping can have the benefit that we can amortize some registers
+// that are common to all threads. However, it may also introduce
+// more registers. 
+
+const uint MESHLET_INDICES_ITERATIONS   = ((NVMESHLET_PRIMITIVE_COUNT * 3 + WORKGROUP_SIZE * NVMESHLET_INDICES_PER_FETCH - 1) / (WORKGROUP_SIZE * NVMESHLET_INDICES_PER_FETCH));
+const uint MESHLET_VERTEX_ITERATIONS    = ((NVMESHLET_VERTEX_COUNT    + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE);
+const uint MESHLET_PRIMITIVE_ITERATIONS = ((NVMESHLET_PRIMITIVE_COUNT + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE);
 
 // task shader is used in advance, doing early cluster culling
 #ifndef USE_TASK_STAGE
 #define USE_TASK_STAGE          0
 #endif
 
+// set in Sample::getShaderPrepend()
 // process vertex outputs after primitive culling
 // once we know which vertices are actually used
 #ifndef USE_VERTEX_CULL
@@ -103,8 +116,10 @@ layout(triangles) out;
 #if IS_VULKAN
 
   layout(push_constant) uniform pushConstant{
-    uvec4     geometryOffsets;
     // x: mesh, y: prim, z: 0, w: vertex
+    uvec4     geometryOffsets;
+    // x: meshFirst, y: meshMax
+    uvec4     drawRange;
   };
 
   layout(std140, binding = SCENE_UBO_VIEW, set = DSET_SCENE) uniform sceneBuffer {
@@ -133,9 +148,11 @@ layout(triangles) out;
 
 #else
 
-  layout(location = 0) uniform uvec4 geometryOffsets;
   // x: mesh, y: prim, z: 0, w: vertex
-
+  layout(location = 0) uniform uvec4 geometryOffsets;
+  // x: meshFirst, y: meshMax
+  layout(location = 1) uniform uvec4 drawRange;
+  
   layout(std140, binding = UBO_SCENE_VIEW) uniform sceneBuffer {
     SceneData scene;
   };
@@ -175,7 +192,7 @@ layout(triangles) out;
   // gl_WorkGroupID.x runs from [0 .. parentTask.gl_TaskCountNV - 1]
   uint meshletID = IN.baseID + IN.deltaIDs[gl_WorkGroupID.x];
 #else
-  uint meshletID = gl_WorkGroupID.x;
+  uint meshletID = gl_WorkGroupID.x + drawRange.x;
 #endif
   uint laneID = gl_LocalInvocationID.x;
 
@@ -231,7 +248,72 @@ vec4 getExtra( uint vidx, uint xtra ){
 #endif
 
 //////////////////////////////////////////////////
-// EXECUTION
+// VERTEX/PRIMITIVE CULLING SETUP
+
+// When we do per-primitive culling we have two options
+// how to deal with the vertex outputs:
+// - do them regardless of culling result (USE_VERTEX_CULL == 0)
+// - wait until we know which vertices are actually used (USE_VERTEX_CULL == 1)
+
+// NV_mesh_shader allows to have read and write
+// access to mesh-shader outputs. Instead of using
+// extra shared memory, we simply store temporary
+// culling data in the vertex outputs, before we
+// later overwrite them with actual outputs.
+
+#if USE_VERTEX_CULL
+  void vertexcull_writeVertexIndex(uint vert, uint val)
+  {
+    OUT[vert].wNormal.x = uintBitsToFloat(val);
+  }
+
+  uint vertexcull_readVertexIndex(uint vert)
+  {
+    return floatBitsToUint(OUT[vert].wNormal.x);
+  }
+
+  bool vertexcull_isVertexUsed(uint vert)
+  {
+    return OUT[vert].wNormal.y != 0;
+  }
+
+  void vertexcull_clearVertexUsed(uint vert) {
+    OUT[vert].wNormal.y = 0;
+  }
+
+  void vertexcull_setVertexUsed(uint vert) {
+    OUT[vert].wNormal.y = 1;
+  }
+  
+  // even for primitive culling we hijack
+  // the output values
+  void primcull_setVertexClip(uint vert, uint mask) {
+  #if USE_MESH_FRUSTUMCULL
+    OUT[vert].wNormal.z = uintBitsToFloat(mask);
+  #endif
+  }
+  uint primcull_getVertexClip(uint vert) {
+    return floatBitsToUint(OUT[vert].wNormal.z);
+  }
+#else
+  // in this scenario we have written vertex outputs already
+  // so we cannot repurpose the output space for temporary
+  // storage
+  
+  void primcull_setVertexClip(uint vert, uint mask) {
+    // dummy
+  }
+  uint primcull_getVertexClip(uint vert) {
+    return getCullBits(gl_MeshVerticesNV[vert].gl_Position);
+  }
+#endif
+
+  vec2 primcull_getVertexScreen(uint vert) {
+    return getScreenPos(gl_MeshVerticesNV[vert].gl_Position);
+  }
+
+//////////////////////////////////////////////////
+// VERTEX EXECUTION
 
 // This is the code that is normally done in the vertex-shader
 // "vidx" is what gl_VertexIndex would be
@@ -301,85 +383,6 @@ void procAttributes(const uint vert, uint vidx)
 //////////////////////////////////////////////////
 // MESH EXECUTION
 
-  // The workgroup size of the shader may not have enough threads
-  // to do all the work in a unique thread.
-  // Therefore we might need to loop to process all the work.
-  // Looping can have the benefit that we can amortize some registers
-  // that are common to all threads. However, it may also introduce
-  // more registers. 
-  
-  #define MESHLET_INDICES_ITERATIONS    ((NVMESHLET_PRIMITIVE_COUNT * 3 + WORKGROUP_SIZE * NVMESHLET_INDICES_PER_FETCH - 1) / (WORKGROUP_SIZE * NVMESHLET_INDICES_PER_FETCH))
-  #define MESHLET_VERTEX_ITERATIONS     ((NVMESHLET_VERTEX_COUNT    + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE)
-  #define MESHLET_PRIMITIVE_ITERATIONS  ((NVMESHLET_PRIMITIVE_COUNT + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE)
-  
-  #define BARRIER() \
-    memoryBarrierShared(); \
-    barrier();
-
-// When we do per-primitive culling we have two options
-// how to deal with the vertex outputs:
-// - do them regardless of culling result (USE_VERTEX_CULL == 0)
-// - wait until we know which vertices are actually used (USE_VERTEX_CULL == 1)
-
-// NV_mesh_shader allows to have read and write
-// access to mesh-shader outputs. Instead of using
-// extra shared memory, we simply store temporary
-// culling data in the vertex outputs, before we
-// later overwrite them with actual outputs.
-
-#if USE_VERTEX_CULL
-  void vertexcull_writeVertexIndex(uint vert, uint val)
-  {
-    OUT[vert].wNormal.x = uintBitsToFloat(val);
-  }
-
-  uint vertexcull_readVertexIndex(uint vert)
-  {
-    return floatBitsToUint(OUT[vert].wNormal.x);
-  }
-
-  bool vertexcull_isVertexUsed(uint vert)
-  {
-    return OUT[vert].wNormal.y != 0;
-  }
-
-  void vertexcull_clearVertexUsed(uint vert) {
-    OUT[vert].wNormal.y = 0;
-  }
-
-  void vertexcull_setVertexUsed(uint vert) {
-    OUT[vert].wNormal.y = 1;
-  }
-  
-  // even for primitive culling we hijack
-  // the output values
-  void primcull_setVertexClip(uint vert, uint mask) {
-  #if USE_MESH_FRUSTUMCULL
-    OUT[vert].wNormal.z = uintBitsToFloat(mask);
-  #endif
-  }
-  uint primcull_getVertexClip(uint vert) {
-    return floatBitsToUint(OUT[vert].wNormal.z);
-  }
-#else
-  // in this scenario we have written vertex outputs already
-  // so we cannot repurpose the output space for temporary
-  // storage
-  
-  void primcull_setVertexClip(uint vert, uint mask) {
-    // dummy
-  }
-  uint primcull_getVertexClip(uint vert) {
-    return getCullBits(gl_MeshVerticesNV[vert].gl_Position);
-  }
-#endif
-
-  vec2 primcull_getVertexScreen(uint vert) {
-    return getScreenPos(gl_MeshVerticesNV[vert].gl_Position);
-  }
-
-///////////////////////////////////////////////////////////////////////////////
-
 // One can see that the primary mesh-shader code is agnostic of the vertex-shading work.
 // In theory it should be possible to even automatically generate mesh-shader SPIR-V
 // as combination of a template mesh-shader and a vertex-shader provided as SPIR-V
@@ -410,52 +413,49 @@ void main()
   uint vertCount = vertMax + 1;
 
   // VERTEX PROCESSING
-  
-  UNROLL_LOOP
-  for (uint i = 0; i < uint(MESHLET_VERTEX_ITERATIONS); i++)
   {
-    uint vert = laneID + i * WORKGROUP_SIZE;
-    uint vertLoad = min(vert, vertMax);
-    
-  #if USE_VERTEX_CULL
-    vertexcull_clearVertexUsed(vert);
-  #endif
-
+    UNROLL_LOOP
+    for (uint i = 0; i < uint(MESHLET_VERTEX_ITERATIONS); i++)
     {
-      uint idx   = (vertLoad) >> (vidxDiv-1);
-      uint shift = (vertLoad) & (vidxDiv-1);
-
-      uint vidx = primIndices1[idx + vidxStart];
-      vidx <<= vidxBits * (1-shift);
-      vidx >>= vidxBits;
-
-      vidx += geometryOffsets.w;
-
-      vec4 hPos = procVertex(vert, vidx);
-      
-      primcull_setVertexClip(vert, getCullBits(hPos));
+      uint vert = laneID + i * WORKGROUP_SIZE;
+      uint vertLoad = min(vert, vertMax);
       
     #if USE_VERTEX_CULL
-      // we want to keep the vertex index so that
-      // later, after culling, we don't have to load it again
-      vertexcull_writeVertexIndex(vert, vidx);
-    #else
-      // we don't perform vertex culling and directly
-      // process the rest of the vertex-shading work here.
-      // Otherwise we defer it after triangle culling,
-      // so that only the attribute work is done that is
-      // really required.
-      procAttributes(vert, vidx);  
+      vertexcull_clearVertexUsed(vert);
     #endif
+
+      {
+        uint idx   = (vertLoad) >> (vidxDiv-1);
+        uint shift = (vertLoad) & (vidxDiv-1);
+
+        uint vidx = primIndices1[idx + vidxStart];
+        vidx <<= vidxBits * (1-shift);
+        vidx >>= vidxBits;
+
+        vidx += geometryOffsets.w;
+
+        vec4 hPos = procVertex(vert, vidx);
+        
+        primcull_setVertexClip(vert, getCullBits(hPos));
+        
+      #if USE_VERTEX_CULL
+        // we want to keep the vertex index so that
+        // later, after culling, we don't have to load it again
+        vertexcull_writeVertexIndex(vert, vidx);
+      #else
+        // we don't perform vertex culling and directly
+        // process the rest of the vertex-shading work here.
+        // Otherwise we defer it after triangle culling,
+        // so that only the attribute work is done that is
+        // really required.
+        procAttributes(vert, vidx);  
+      #endif
+      }
     }
   }
 
   // PRIMITIVE TOPOLOGY
   {
-    uint readBegin = primStart / 2;
-    uint readIndex = primCount * 3 - 1;
-    uint readMax   = readIndex / 8;
-    
     // To speed up loading of the primitive (triangle) indices
     // we load 64-bit per thread (NV hardware as fast paths
     // to load aligned 64- and 128-bit values).
@@ -466,7 +466,13 @@ void main()
     // A bit of caution must be taken here, as we must ensure the indices
     // written by the intrinsics fit within the "max_primitives" we
     // declared at start.
-
+    // The nvmeshlet builders actually take care of this and will
+    // pack a few less primitives to ensure we never overshoot.
+    
+    uint readBegin = primStart / 2;
+    uint readIndex = primCount * 3 - 1;
+    uint readMax   = readIndex / 8;
+    
     UNROLL_LOOP
     for (uint i = 0; i < uint(MESHLET_INDICES_ITERATIONS); i++)
     {
@@ -483,19 +489,20 @@ void main()
 #endif
 
   ////////////////////////////////////////////
+  // PRIMITIVE CULLING & OUTPUT PHASE
+  
+  memoryBarrierShared();
+  barrier();
+  
+  uint outPrimCount = 0;
 
-  uint outTriangles = 0;
-
-  BARRIER();
-
-  // PRIMITIVE PHASE
-
-  const uint primUsedIterations = (primCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
-  for (uint i = 0; i < primUsedIterations; i++) {
+  UNROLL_LOOP
+  for (uint i = 0; i < uint(MESHLET_PRIMITIVE_ITERATIONS); i++)
+  {
+    uint prim = laneID + i * WORKGROUP_SIZE;
+      
     bool   primVisible = false;
     u8vec4 topology;
-
-    uint prim = laneID + i * WORKGROUP_SIZE;
 
     if (prim <= primMax) {
       uint idx = prim * 3;
@@ -533,9 +540,9 @@ void main()
     #endif
     }
 
-    uvec4 voteTris  = subgroupBallot(primVisible);
-    uint  numTris   = subgroupBallotBitCount(voteTris);
-    uint  idxOffset = subgroupBallotExclusiveBitCount(voteTris) + outTriangles;
+    uvec4 votePrims = subgroupBallot(primVisible);
+    uint  numPrims  = subgroupBallotBitCount(votePrims);
+    uint  idxOffset = subgroupBallotExclusiveBitCount(votePrims) + outPrimCount;
 
     if (primVisible) {
       uint idx = idxOffset * 3;
@@ -548,17 +555,20 @@ void main()
     #endif
     }
 
-    outTriangles += numTris;
+    outPrimCount += numPrims;
   }
 
+  ////////////////////////////////////////////  
+  // OUTPUT
 
-  BARRIER();
+  memoryBarrierShared();
+  barrier();
 
   if (laneID == 0) {
-    gl_PrimitiveCountNV = outTriangles;
+    gl_PrimitiveCountNV = outPrimCount;
   #if USE_STATS
     atomicAdd(stats.meshletsOutput, 1);
-    atomicAdd(stats.trisOutput, outTriangles);
+    atomicAdd(stats.trisOutput, outPrimCount);
     #if !USE_VERTEX_CULL
       atomicAdd(stats.attrInput,  vertCount);
       atomicAdd(stats.attrOutput, vertCount);
@@ -567,8 +577,7 @@ void main()
   }
 
 #if USE_VERTEX_CULL
-  // FETCH REST OF VERTEX ATTRIBS
-
+  // OUTPUT VERTICES
   {
     uint usedVertices = 0;
 

@@ -21,12 +21,8 @@
 
 #include "cadscene_gl.hpp"
 #include "nvmeshlet_packbasic.hpp"
-#include <inttypes.h>
-#include <nvgl/glsltypes_gl.hpp>
+#include <cinttypes>
 #include <nvh/nvprint.hpp>
-
-#include "common.h"
-
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -80,13 +76,13 @@ void GeometryMemoryGL::finalize()
   Chunk& chunk = getActiveChunk();
 
   glCreateBuffers(1, &chunk.vboGL);
-  glNamedBufferStorage(chunk.vboGL, chunk.vboSize, 0, GL_DYNAMIC_STORAGE_BIT);
+  glNamedBufferStorage(chunk.vboGL, static_cast<GLsizeiptr>(chunk.vboSize), nullptr, GL_DYNAMIC_STORAGE_BIT);
 
   glCreateBuffers(1, &chunk.aboGL);
-  glNamedBufferStorage(chunk.aboGL, chunk.aboSize, 0, GL_DYNAMIC_STORAGE_BIT);
+  glNamedBufferStorage(chunk.aboGL, static_cast<GLsizeiptr>(chunk.aboSize), nullptr, GL_DYNAMIC_STORAGE_BIT);
 
   glCreateBuffers(1, &chunk.iboGL);
-  glNamedBufferStorage(chunk.iboGL, chunk.iboSize, 0, GL_DYNAMIC_STORAGE_BIT);
+  glNamedBufferStorage(chunk.iboGL, static_cast<GLsizeiptr>(chunk.iboSize), nullptr, GL_DYNAMIC_STORAGE_BIT);
 
   glCreateTextures(GL_TEXTURE_BUFFER, 1, &chunk.vboTEX);
   glTextureBuffer(chunk.vboTEX, m_fp16 ? GL_RGBA16F : GL_RGBA32F, chunk.vboGL);
@@ -120,10 +116,10 @@ void GeometryMemoryGL::finalize()
     chunk.meshIndicesSize += 16;
 
     glCreateBuffers(1, &chunk.meshGL);
-    glNamedBufferStorage(chunk.meshGL, chunk.meshSize, 0, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(chunk.meshGL, static_cast<GLsizeiptr>(chunk.meshSize), nullptr, GL_DYNAMIC_STORAGE_BIT);
 
     glCreateBuffers(1, &chunk.meshIndicesGL);
-    glNamedBufferStorage(chunk.meshIndicesGL, chunk.meshIndicesSize, 0, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(chunk.meshIndicesGL, static_cast<GLsizeiptr>(chunk.meshIndicesSize), nullptr, GL_DYNAMIC_STORAGE_BIT);
 
     if(m_bindless)
     {
@@ -180,37 +176,37 @@ void GeometryMemoryGL::init(size_t vboStride, size_t aboStride, size_t maxChunk,
 
 void GeometryMemoryGL::deinit()
 {
-  for(size_t i = 0; i < m_chunks.size(); i++)
+  for(auto & m_chunk : m_chunks)
   {
     if(m_bindless)
     {
-      if(m_chunks[i].meshGL)
+      if(m_chunk.meshGL)
       {
-        glMakeNamedBufferNonResidentNV(m_chunks[i].meshGL);
-        glMakeNamedBufferNonResidentNV(m_chunks[i].meshIndicesGL);
+        glMakeNamedBufferNonResidentNV(m_chunk.meshGL);
+        glMakeNamedBufferNonResidentNV(m_chunk.meshIndicesGL);
       }
 
 
-      glMakeTextureHandleNonResidentARB(m_chunks[i].vboTEXADDR);
-      glMakeTextureHandleNonResidentARB(m_chunks[i].aboTEXADDR);
+      glMakeTextureHandleNonResidentARB(m_chunk.vboTEXADDR);
+      glMakeTextureHandleNonResidentARB(m_chunk.aboTEXADDR);
 
-      glMakeNamedBufferNonResidentNV(m_chunks[i].vboGL);
-      glMakeNamedBufferNonResidentNV(m_chunks[i].aboGL);
-      glMakeNamedBufferNonResidentNV(m_chunks[i].iboGL);
+      glMakeNamedBufferNonResidentNV(m_chunk.vboGL);
+      glMakeNamedBufferNonResidentNV(m_chunk.aboGL);
+      glMakeNamedBufferNonResidentNV(m_chunk.iboGL);
     }
 
-    if(m_chunks[i].meshGL)
+    if(m_chunk.meshGL)
     {
-      glDeleteBuffers(1, &m_chunks[i].meshGL);
-      glDeleteBuffers(1, &m_chunks[i].meshIndicesGL);
+      glDeleteBuffers(1, &m_chunk.meshGL);
+      glDeleteBuffers(1, &m_chunk.meshIndicesGL);
     }
 
-    glDeleteTextures(1, &m_chunks[i].vboTEX);
-    glDeleteTextures(1, &m_chunks[i].aboTEX);
+    glDeleteTextures(1, &m_chunk.vboTEX);
+    glDeleteTextures(1, &m_chunk.aboTEX);
 
-    glDeleteBuffers(1, &m_chunks[i].vboGL);
-    glDeleteBuffers(1, &m_chunks[i].aboGL);
-    glDeleteBuffers(1, &m_chunks[i].iboGL);
+    glDeleteBuffers(1, &m_chunk.vboGL);
+    glDeleteBuffers(1, &m_chunk.aboGL);
+    glDeleteBuffers(1, &m_chunk.iboGL);
   }
 
   m_chunks.clear();
@@ -236,13 +232,13 @@ void CadSceneGL::init(const CadScene& cadscene)
 
     m_geometryMem.finalize();
 
-    LOGI("Size of vertex data: %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize()));
-    LOGI("Size of attrib data: %11" PRId64 "\n", uint64_t(m_geometryMem.getAttributeSize()));
-    LOGI("Size of index data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIndexSize()));
-    LOGI("Size of mesh data:   %11" PRId64 "\n", uint64_t(m_geometryMem.getMeshSize()));
+    LOGI("Size of vertex data: %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize()))
+    LOGI("Size of attrib data: %11" PRId64 "\n", uint64_t(m_geometryMem.getAttributeSize()))
+    LOGI("Size of index data:  %11" PRId64 "\n", uint64_t(m_geometryMem.getIndexSize()))
+    LOGI("Size of mesh data:   %11" PRId64 "\n", uint64_t(m_geometryMem.getMeshSize()))
     LOGI("Size of data:        %11" PRId64 "\n", uint64_t(m_geometryMem.getVertexSize() + m_geometryMem.getAttributeSize()
-                                                          + m_geometryMem.getIndexSize() + m_geometryMem.getMeshSize()));
-    LOGI("Chunks:              %11d\n", uint32_t(m_geometryMem.getChunkCount()));
+                                                          + m_geometryMem.getIndexSize() + m_geometryMem.getMeshSize()))
+    LOGI("Chunks:              %11d\n", uint32_t(m_geometryMem.getChunkCount()))
   }
 
   for(size_t i = 0; i < cadscene.m_geometry.size(); i++)
@@ -252,23 +248,22 @@ void CadSceneGL::init(const CadScene& cadscene)
 
     const GeometryMemoryGL::Chunk& chunk = m_geometryMem.getChunk(geom.mem);
 
-    glNamedBufferSubData(chunk.vboGL, geom.mem.vboOffset, cadgeom.vboSize, cadgeom.vboData);
-    glNamedBufferSubData(chunk.aboGL, geom.mem.aboOffset, cadgeom.aboSize, cadgeom.aboData);
-    glNamedBufferSubData(chunk.iboGL, geom.mem.iboOffset, cadgeom.iboSize, cadgeom.iboData);
+    glNamedBufferSubData(chunk.vboGL, static_cast<GLintptr>(geom.mem.vboOffset), static_cast<GLsizeiptr>(cadgeom.vboSize), cadgeom.vboData);
+    glNamedBufferSubData(chunk.aboGL, static_cast<GLintptr>(geom.mem.aboOffset), static_cast<GLsizeiptr>(cadgeom.aboSize), cadgeom.aboData);
+    glNamedBufferSubData(chunk.iboGL, static_cast<GLintptr>(geom.mem.iboOffset), static_cast<GLsizeiptr>(cadgeom.iboSize), cadgeom.iboData);
 
-    geom.vbo = nvgl::BufferBinding(chunk.vboGL, geom.mem.vboOffset, cadgeom.vboSize, chunk.vboADDR);
-    geom.abo = nvgl::BufferBinding(chunk.aboGL, geom.mem.aboOffset, cadgeom.aboSize, chunk.aboADDR);
-    geom.ibo = nvgl::BufferBinding(chunk.iboGL, geom.mem.iboOffset, cadgeom.iboSize, chunk.iboADDR);
+    geom.vbo = nvgl::BufferBinding(chunk.vboGL, static_cast<GLintptr>(geom.mem.vboOffset), static_cast<GLsizeiptr>(cadgeom.vboSize), chunk.vboADDR);
+    geom.abo = nvgl::BufferBinding(chunk.aboGL, static_cast<GLintptr>(geom.mem.aboOffset), static_cast<GLsizeiptr>(cadgeom.aboSize), chunk.aboADDR);
+    geom.ibo = nvgl::BufferBinding(chunk.iboGL, static_cast<GLintptr>(geom.mem.iboOffset), static_cast<GLsizeiptr>(cadgeom.iboSize), chunk.iboADDR);
 
-    GLintptr descOffset = geom.mem.meshOffset;
-    GLintptr primOffset = geom.mem.meshIndicesOffset;
-    GLintptr vertOffset = geom.mem.meshIndicesOffset;
+    GLintptr descOffset = static_cast<GLintptr>(geom.mem.meshOffset);
+    GLintptr primOffset = static_cast<GLintptr>(geom.mem.meshIndicesOffset);
 
-    glNamedBufferSubData(chunk.meshGL, descOffset, cadgeom.meshlet.descSize, cadgeom.meshlet.descData);
-    glNamedBufferSubData(chunk.meshIndicesGL, primOffset, cadgeom.meshlet.primSize, cadgeom.meshlet.primData);
+    glNamedBufferSubData(chunk.meshGL, descOffset, static_cast<GLsizeiptr>(cadgeom.meshlet.descSize), cadgeom.meshlet.descData);
+    glNamedBufferSubData(chunk.meshIndicesGL, primOffset, static_cast<GLsizeiptr>(cadgeom.meshlet.primSize), cadgeom.meshlet.primData);
 
-    geom.topoMeshlet = nvgl::BufferBinding(chunk.meshGL, descOffset, cadgeom.meshlet.descSize, chunk.meshADDR);
-    geom.topoPrim    = nvgl::BufferBinding(chunk.meshIndicesGL, primOffset, cadgeom.meshlet.primSize, chunk.meshIndicesADDR);
+    geom.topoMeshlet = nvgl::BufferBinding(chunk.meshGL, descOffset, static_cast<GLsizeiptr>(cadgeom.meshlet.descSize), chunk.meshADDR);
+    geom.topoPrim    = nvgl::BufferBinding(chunk.meshIndicesGL, primOffset, static_cast<GLsizeiptr>(cadgeom.meshlet.primSize), chunk.meshIndicesADDR);
   }
 
   m_buffers.materials.create(sizeof(CadScene::Material) * cadscene.m_materials.size(), cadscene.m_materials.data(), 0, 0);

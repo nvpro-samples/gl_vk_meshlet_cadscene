@@ -18,7 +18,6 @@
  */
 
 
-
 #pragma once
 
 #include "cadscene.hpp"
@@ -97,23 +96,23 @@ struct GeometryMemoryVK
 
   struct Chunk
   {
-    VkBuffer vbo;
-    VkBuffer ibo;
-    VkBuffer abo;
-    VkBuffer mesh;
-    VkBuffer meshIndices;
+    VkBuffer vbo{};
+    VkBuffer ibo{};
+    VkBuffer abo{};
+    VkBuffer mesh{};
+    VkBuffer meshIndices{};
 
-    VkDescriptorBufferInfo meshInfo;
-    VkDescriptorBufferInfo meshIndicesInfo;
+    VkDescriptorBufferInfo meshInfo{};
+    VkDescriptorBufferInfo meshIndicesInfo{};
 
-    VkBufferView           vboView;
-    VkBufferView           aboView;
+    VkBufferView vboView{};
+    VkBufferView aboView{};
 
-    VkDeviceSize vboSize;
-    VkDeviceSize aboSize;
-    VkDeviceSize iboSize;
-    VkDeviceSize meshSize;
-    VkDeviceSize meshIndicesSize;
+    VkDeviceSize vboSize{};
+    VkDeviceSize aboSize{};
+    VkDeviceSize iboSize{};
+    VkDeviceSize meshSize{};
+    VkDeviceSize meshIndicesSize{};
 
     nvvk::AllocationID vboAID;
     nvvk::AllocationID aboAID;
@@ -138,51 +137,51 @@ struct GeometryMemoryVK
   void alloc(VkDeviceSize vboSize, VkDeviceSize aboSize, VkDeviceSize iboSize, VkDeviceSize meshSize, VkDeviceSize meshIndicesSize, Allocation& allocation);
   void finalize();
 
-  const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
+  [[nodiscard]] const Chunk& getChunk(const Allocation& allocation) const { return m_chunks[allocation.chunkIndex]; }
 
-  const Chunk& getChunk(Index index) const { return m_chunks[index]; }
+  [[nodiscard]] const Chunk& getChunk(Index index) const { return m_chunks[index]; }
 
-  VkDeviceSize getVertexSize() const
+  [[nodiscard]] VkDeviceSize getVertexSize() const
   {
     VkDeviceSize size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto& m_chunk : m_chunks)
     {
-      size += m_chunks[i].vboSize;
+      size += m_chunk.vboSize;
     }
     return size;
   }
 
-  VkDeviceSize getAttributeSize() const
+  [[nodiscard]] VkDeviceSize getAttributeSize() const
   {
     VkDeviceSize size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto& m_chunk : m_chunks)
     {
-      size += m_chunks[i].aboSize;
+      size += m_chunk.aboSize;
     }
     return size;
   }
 
-  VkDeviceSize getIndexSize() const
+  [[nodiscard]] VkDeviceSize getIndexSize() const
   {
     VkDeviceSize size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto& m_chunk : m_chunks)
     {
-      size += m_chunks[i].iboSize;
+      size += m_chunk.iboSize;
     }
     return size;
   }
 
-  VkDeviceSize getMeshSize() const
+  [[nodiscard]] VkDeviceSize getMeshSize() const
   {
     VkDeviceSize size = 0;
-    for(size_t i = 0; i < m_chunks.size(); i++)
+    for(const auto& m_chunk : m_chunks)
     {
-      size += m_chunks[i].meshSize + m_chunks[i].meshIndicesSize;
+      size += m_chunk.meshSize + m_chunk.meshIndicesSize;
     }
     return size;
   }
 
-  VkDeviceSize getChunkCount() const { return m_chunks.size(); }
+  [[nodiscard]] VkDeviceSize getChunkCount() const { return m_chunks.size(); }
 
 private:
   VkDeviceSize m_alignment;
@@ -193,7 +192,7 @@ private:
   VkDeviceSize m_maxMeshChunk;
   VkDeviceSize m_maxMeshIndicesChunk;
 
-  Index getActiveIndex() { return (m_chunks.size() - 1); }
+  [[nodiscard]] Index getActiveIndex() const { return (m_chunks.size() - 1); }
 
   Chunk& getActiveChunk()
   {

@@ -48,8 +48,8 @@ inline size_t alignedSize(size_t sz, size_t align)
 struct FrameConfig
 {
   SceneData   sceneUbo;
-  int         winWidth;
-  int         winHeight;
+  int         winWidth{};
+  int         winHeight{};
   ImDrawData* imguiDrawData = nullptr;
   bool        meshletBoxes  = false;
 };
@@ -68,10 +68,10 @@ public:
   uint32_t m_frame = 0;
 
   uint32_t m_extraAttributes = 0;
-  uint32_t m_alignedMatrixSize;
-  uint32_t m_alignedMaterialSize;
-  uint32_t m_vertexSize;
-  uint32_t m_vertexAttributeSize;
+  uint32_t m_alignedMatrixSize{};
+  uint32_t m_alignedMaterialSize{};
+  uint32_t m_vertexSize{};
+  uint32_t m_vertexAttributeSize{};
 
 
   virtual void synchronize() {}
@@ -101,7 +101,7 @@ public:
 
   virtual void getStats(CullStats& stats) {}
 
-  virtual nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const = 0;
+  [[nodiscard]] virtual nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const = 0;
 
   inline void initAlignedSizes(unsigned int uboAlignment)
   {

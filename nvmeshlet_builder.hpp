@@ -34,7 +34,7 @@
 namespace NVMeshlet {
 // Each Meshlet can have a varying count of its maximum number
 // of vertices and primitives. We hardcode a few absolute maxima
-// to accellerate some of the functions and allow usage of
+// to accelerate some functions and allow usage of
 // smaller datastructures.
 
 // The builder, however, is configurable to use smaller maxima,
@@ -44,7 +44,7 @@ namespace NVMeshlet {
 // meshlet descriptor. Actual hw-limits can be higher, but typically
 // make things slower due to large on-chip allocation.
 
-#define NVMESHLET_ASSERT_ON_DEGENERATES      1
+#define NVMESHLET_ASSERT_ON_DEGENERATES 1
 
 static const int MAX_VERTEX_COUNT_LIMIT    = 256;
 static const int MAX_PRIMITIVE_COUNT_LIMIT = 256;
@@ -52,8 +52,9 @@ static const int MAX_PRIMITIVE_COUNT_LIMIT = 256;
 // must not change
 typedef uint8_t PrimitiveIndexType;  // must store [0,MAX_VERTEX_COUNT_LIMIT-1]
 
-inline uint32_t alignedSize(uint32_t v, uint32_t align) {
-  return (v + align - 1) & (~(align-1));
+inline uint32_t alignedSize(uint32_t v, uint32_t align)
+{
+  return (v + align - 1) & (~(align - 1));
 }
 
 // opaque type, all builders will specialize this, but fit within
@@ -67,10 +68,11 @@ struct MeshletDesc
 
 struct MeshletBbox
 {
-  float bboxMin[3];
-  float bboxMax[3];
+  float bboxMin[3]{};
+  float bboxMax[3]{};
 
-  MeshletBbox() {
+  MeshletBbox()
+  {
     bboxMin[0] = FLT_MAX;
     bboxMin[1] = FLT_MAX;
     bboxMin[2] = FLT_MAX;
@@ -107,7 +109,7 @@ struct Stats
   size_t vertexIndices = 0;
   size_t vertexTotal   = 0;
 
-  size_t posBitTotal  = 0;
+  size_t posBitTotal = 0;
 
   // used when we sum multiple stats into a single to
   // compute averages of the averages/variances below.
@@ -143,9 +145,7 @@ struct Stats
       return;
 
     double fprimloadAvg   = primloadAvg / double(appended);
-    double fprimloadVar   = primloadVar / double(appended);
     double fvertexloadAvg = vertexloadAvg / double(appended);
-    double fvertexloadVar = vertexloadVar / double(appended);
 
     double statsNum    = double(meshletsTotal);
     double backfaceAvg = double(backfaceTotal) / statsNum;
@@ -154,9 +154,8 @@ struct Stats
     double vertexWaste  = double(vertexIndices) / double(vertexTotal) - 1.0;
     double meshletWaste = double(meshletsStored) / double(meshletsTotal) - 1.0;
 
-    fprintf(log,
-            "meshlets; %7zd; prim; %9zd; %.2f; vertex; %9zd; %.2f; backface; %.2f; waste; v; %.2f; p; %.2f; m; %.2f;\n", meshletsTotal,
-            primTotal, fprimloadAvg, vertexTotal, fvertexloadAvg, backfaceAvg, vertexWaste, primWaste, meshletWaste);
+    fprintf(log, "meshlets; %7zd; prim; %9zd; %.2f; vertex; %9zd; %.2f; backface; %.2f; waste; v; %.2f; p; %.2f; m; %.2f;\n",
+            meshletsTotal, primTotal, fprimloadAvg, vertexTotal, fvertexloadAvg, backfaceAvg, vertexWaste, primWaste, meshletWaste);
   }
 };
 
@@ -165,11 +164,11 @@ struct Stats
 
 struct vec
 {
-  float x;
-  float y;
-  float z;
+  float x{};
+  float y{};
+  float z{};
 
-  vec() {}
+  vec() = default;
   vec(float v)
       : x(v)
       , y(v)
@@ -182,7 +181,7 @@ struct vec
       , z(_z)
   {
   }
-  vec(const float* v)
+  explicit vec(const float* v)
       : x(v[0])
       , y(v[1])
       , z(v[2])
@@ -192,44 +191,43 @@ struct vec
 
 inline vec vec_min(const vec& a, const vec& b)
 {
-  return vec(std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z));
+  return {std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z)};
 }
 inline vec vec_max(const vec& a, const vec& b)
 {
-  return vec(std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z));
+  return {std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z)};
 }
 inline vec operator+(const vec& a, const vec& b)
 {
-  return vec(a.x + b.x, a.y + b.y, a.z + b.z);
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 inline vec operator-(const vec& a, const vec& b)
 {
-  return vec(a.x - b.x, a.y - b.y, a.z - b.z);
+  return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 inline vec operator/(const vec& a, const vec& b)
 {
-  return vec(a.x / b.x, a.y / b.y, a.z / b.z);
+  return {a.x / b.x, a.y / b.y, a.z / b.z};
 }
 inline vec operator*(const vec& a, const vec& b)
 {
-  return vec(a.x * b.x, a.y * b.y, a.z * b.z);
+  return {a.x * b.x, a.y * b.y, a.z * b.z};
 }
 inline vec operator*(const vec& a, const float b)
 {
-  return vec(a.x * b, a.y * b, a.z * b);
+  return {a.x * b, a.y * b, a.z * b};
 }
 inline vec vec_floor(const vec& a)
 {
-  return vec(floorf(a.x), floorf(a.y), floorf(a.z));
+  return {floorf(a.x), floorf(a.y), floorf(a.z)};
 }
 inline vec vec_clamp(const vec& a, const float lowerV, const float upperV)
 {
-  return vec(std::max(std::min(upperV, a.x), lowerV), std::max(std::min(upperV, a.y), lowerV),
-             std::max(std::min(upperV, a.z), lowerV));
+  return {std::max(std::min(upperV, a.x), lowerV), std::max(std::min(upperV, a.y), lowerV), std::max(std::min(upperV, a.z), lowerV)};
 }
 inline vec vec_cross(const vec& a, const vec& b)
 {
-  return vec(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 inline float vec_dot(const vec& a, const vec& b)
 {
@@ -251,7 +249,7 @@ inline vec vec_normalize(const vec& a)
 inline vec oct_signNotZero(vec v)
 {
   // leaves z as is
-  return vec((v.x >= 0.0f) ? +1.0f : -1.0f, (v.y >= 0.0f) ? +1.0f : -1.0f, 1.0f);
+  return {(v.x >= 0.0f) ? +1.0f : -1.0f, (v.y >= 0.0f) ? +1.0f : -1.0f, 1.0f};
 }
 
 // Assume normalized input. Output is on [-1, 1] for each component.
@@ -278,10 +276,10 @@ inline vec float32x3_to_octn_precise(vec v, const int n)
   vec s = float32x3_to_oct(v);  // Remap to the square
                                 // Each snorm's max value interpreted as an integer,
                                 // e.g., 127.0 for snorm8
-  float M = float(1 << ((n / 2) - 1)) - 1.0;
+  float M = float(1 << ((n / 2) - 1)) - 1.0f;
   // Remap components to snorm(n/2) precision...with floor instead
   // of round (see equation 1)
-  s                        = vec_floor(vec_clamp(s, -1.0f, +1.0f) * M) * (1.0 / M);
+  s                        = vec_floor(vec_clamp(s, -1.0f, +1.0f) * M) * (1.0f / M);
   vec   bestRepresentation = s;
   float highestCosine      = vec_dot(oct_to_float32x3(s), v);
   // Test all combinations of floor and ceil and keep the best.
@@ -295,7 +293,7 @@ inline vec float32x3_to_octn_precise(vec v, const int n)
         // Offset the bit pattern (which is stored in floating
         // point!) to effectively change the rounding mode
         // (when i or j is 0: floor, when it is one: ceiling)
-        vec   candidate = vec(i, j, 0) * (1 / M) + s;
+        vec   candidate = vec(static_cast<float>(i), static_cast<float>(j), 0) * (1 / M) + s;
         float cosine    = vec_dot(oct_to_float32x3(candidate), v);
         if(cosine > highestCosine)
         {
@@ -309,9 +307,9 @@ inline vec float32x3_to_octn_precise(vec v, const int n)
 //////////////////////////////////////////////////////////////////////////
 
 // quantized vector
-struct qvec 
+struct qvec
 {
-  uint32_t bits[3];
+  uint32_t bits[3]{};
 
   qvec()
   {
@@ -319,7 +317,7 @@ struct qvec
     bits[1] = 0;
     bits[2] = 0;
   }
-  qvec(uint32_t raw)
+  explicit qvec(uint32_t raw)
   {
     bits[0] = raw;
     bits[1] = raw;
@@ -334,25 +332,25 @@ struct qvec
   qvec(const vec& v, const vec& bboxMin, const vec& bboxExtent, float quantizedMul)
   {
     vec nrm = (v - bboxMin) / bboxExtent;
-    bits[0]  = uint32_t(round(nrm.x * quantizedMul));
-    bits[1]  = uint32_t(round(nrm.y * quantizedMul));
-    bits[2]  = uint32_t(round(nrm.z * quantizedMul));
+    bits[0] = uint32_t(round(nrm.x * quantizedMul));
+    bits[1] = uint32_t(round(nrm.y * quantizedMul));
+    bits[2] = uint32_t(round(nrm.z * quantizedMul));
   }
 };
 
 inline qvec operator-(const qvec& a, const qvec& b)
 {
-  return qvec(a.bits[0]- b.bits[0], a.bits[1] - b.bits[1], a.bits[2] - b.bits[2]);
+  return {a.bits[0] - b.bits[0], a.bits[1] - b.bits[1], a.bits[2] - b.bits[2]};
 }
 
 inline qvec qvec_min(const qvec& a, const qvec& b)
 {
-  return qvec(std::min(a.bits[0], b.bits[0]), std::min(a.bits[1], b.bits[1]), std::min(a.bits[2], b.bits[2]));
+  return {std::min(a.bits[0], b.bits[0]), std::min(a.bits[1], b.bits[1]), std::min(a.bits[2], b.bits[2])};
 }
 
 inline qvec qvec_max(const qvec& a, const qvec& b)
 {
-  return qvec(std::max(a.bits[0], b.bits[0]), std::max(a.bits[1], b.bits[1]), std::max(a.bits[2], b.bits[2]));
+  return {std::max(a.bits[0], b.bits[0]), std::max(a.bits[1], b.bits[1]), std::max(a.bits[2], b.bits[2])};
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -443,19 +441,19 @@ struct PrimitiveCache
   //  The cache is exhausted if either of the maximums is hit.
   //  The effective limits used with the cache must be < MAX.
 
-  PrimitiveIndexType  primitives[MAX_PRIMITIVE_COUNT_LIMIT][3];
-  uint32_t vertices[MAX_VERTEX_COUNT_LIMIT];
-  uint32_t numPrims;
-  uint32_t numVertices;
-  uint32_t numVertexDeltaBits;
-  uint32_t numVertexAllBits;
+  PrimitiveIndexType primitives[MAX_PRIMITIVE_COUNT_LIMIT][3]{};
+  uint32_t           vertices[MAX_VERTEX_COUNT_LIMIT]{};
+  uint32_t           numPrims{};
+  uint32_t           numVertices{};
+  uint32_t           numVertexDeltaBits{};
+  uint32_t           numVertexAllBits{};
 
-  uint32_t maxVertexSize;
-  uint32_t maxPrimitiveSize;
+  uint32_t maxVertexSize{};
+  uint32_t maxPrimitiveSize{};
   uint32_t primitiveBits = 1;
   uint32_t maxBlockBits  = ~0;
 
-  bool empty() const { return numVertices == 0; }
+  [[nodiscard]] bool empty() const { return numVertices == 0; }
 
   void reset()
   {
@@ -464,10 +462,10 @@ struct PrimitiveCache
     numVertexDeltaBits = 0;
     numVertexAllBits   = 0;
     // reset
-    memset(vertices, 0xFFFFFFFF, sizeof(vertices));
+    memset(vertices, static_cast<int>(0xFFFFFFFF), sizeof(vertices));
   }
 
-  bool fitsBlock() const
+  [[nodiscard]] bool fitsBlock() const
   {
     uint32_t primBits = (numPrims - 1) * 3 * primitiveBits;
     uint32_t vertBits = (numVertices - 1) * numVertexDeltaBits;
@@ -475,7 +473,7 @@ struct PrimitiveCache
     return state;
   }
 
-  bool cannotInsert(uint32_t idxA, uint32_t idxB, uint32_t idxC) const
+  [[nodiscard]] bool cannotInsert(uint32_t idxA, uint32_t idxB, uint32_t idxC) const
   {
     const uint32_t indices[3] = {idxA, idxB, idxC};
     // skip degenerate
@@ -490,9 +488,8 @@ struct PrimitiveCache
     uint32_t found = 0;
     for(uint32_t v = 0; v < numVertices; v++)
     {
-      for(int i = 0; i < 3; i++)
+      for(unsigned int idx : indices)
       {
-        uint32_t idx = indices[i];
         if(vertices[v] == idx)
         {
           found++;
@@ -503,7 +500,7 @@ struct PrimitiveCache
     return (numVertices + 3 - found) > maxVertexSize || (numPrims + 1) > maxPrimitiveSize;
   }
 
-  bool cannotInsertBlock(uint32_t idxA, uint32_t idxB, uint32_t idxC) const
+  [[nodiscard]] bool cannotInsertBlock(uint32_t idxA, uint32_t idxB, uint32_t idxC) const
   {
     const uint32_t indices[3] = {idxA, idxB, idxC};
     // skip degenerate
@@ -515,9 +512,8 @@ struct PrimitiveCache
     uint32_t found = 0;
     for(uint32_t v = 0; v < numVertices; v++)
     {
-      for(int i = 0; i < 3; i++)
+      for(unsigned int idx : indices)
       {
-        uint32_t idx = indices[i];
         if(vertices[v] == idx)
         {
           found++;

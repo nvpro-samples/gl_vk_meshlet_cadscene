@@ -21,7 +21,6 @@
 #include "renderer.hpp"
 #include "resources_gl.hpp"
 #include <algorithm>
-#include <assert.h>
 
 #include <nvmath/nvmath_glsltypes.h>
 
@@ -37,46 +36,46 @@ class RendererGL : public Renderer
 public:
   class Type : public Renderer::Type
   {
-    bool        isAvailable(const nvgl::ContextWindow* contextWindow) const { return true; }
-    const char* name() const { return "GL standard"; }
-    Renderer*   create() const
+    bool        isAvailable(const nvgl::ContextWindow* contextWindow) const override { return true; }
+    [[nodiscard]] const char* name() const override { return "GL standard"; }
+    [[nodiscard]] Renderer*   create() const override
     {
-      RendererGL* renderer = new RendererGL();
+      auto* renderer = new RendererGL();
       return renderer;
     }
 
-    Resources* resources() { return ResourcesGL::get(); }
+    Resources* resources() override { return ResourcesGL::get(); }
 
-    unsigned int priority() const { return 0; }
+    [[nodiscard]] unsigned int priority() const override { return 0; }
   };
   class TypeVbum : public Renderer::Type
   {
-    bool isAvailable(const nvgl::ContextWindow* contextWindow) const
+    bool isAvailable(const nvgl::ContextWindow* contextWindow) const override
     {
       return has_GL_NV_vertex_buffer_unified_memory && has_GL_NV_uniform_buffer_unified_memory;
     }
-    const char* name() const { return "GL standard nvbindless"; }
-    Renderer*   create() const
+    [[nodiscard]] const char* name() const override { return "GL standard nvbindless"; }
+    [[nodiscard]] Renderer*   create() const override
     {
-      RendererGL* renderer = new RendererGL();
+      auto* renderer = new RendererGL();
       renderer->m_bindless = true;
       return renderer;
     }
-    unsigned int priority() const { return 0; }
+    [[nodiscard]] unsigned int priority() const override { return 0; }
 
-    Resources* resources() { return ResourcesGL::get(); }
+    Resources* resources() override { return ResourcesGL::get(); }
   };
 
 public:
-  bool init(RenderList* NV_RESTRICT scene, Resources* resources, const Config& config) override;
+  bool init(RenderList* NV_RESTRICT list, Resources* resources, const Config& config) override;
   void deinit() override;
   void draw(const FrameConfig& global) override;
 
   bool m_bindless = false;
 
 private:
-  const RenderList* NV_RESTRICT m_list;
-  ResourcesGL* NV_RESTRICT m_resources;
+  const RenderList* NV_RESTRICT m_list{};
+  ResourcesGL* NV_RESTRICT m_resources{};
   Config                   m_config;
 };
 
@@ -171,9 +170,8 @@ void RendererGL::draw(const FrameConfig& global)
     int statsDraw     = 0;
     int statsChunk    = 0;
 
-    for(int i = 0; i < m_list->m_drawItems.size(); i++)
+    for(const auto & di : m_list->m_drawItems)
     {
-      const RenderList::DrawItem& di  = m_list->m_drawItems[i];
       const CadSceneGL::Geometry& geo = sceneGL.m_geometry[di.geometryIndex];
 
       GLintptr useOffset = bindless ? 0 : 1;
@@ -186,14 +184,14 @@ void RendererGL::draw(const FrameConfig& global)
 
           if(bindless)
           {
-            glBufferAddressRangeNV(GL_VERTEX_ATTRIB_ARRAY_ADDRESS_NV, 0, chunk.vboADDR, chunk.vboSize);
-            glBufferAddressRangeNV(GL_VERTEX_ATTRIB_ARRAY_ADDRESS_NV, 1, chunk.aboADDR, chunk.aboSize);
-            glBufferAddressRangeNV(GL_ELEMENT_ARRAY_ADDRESS_NV, 0, chunk.iboADDR, chunk.iboSize);
+            glBufferAddressRangeNV(GL_VERTEX_ATTRIB_ARRAY_ADDRESS_NV, 0, chunk.vboADDR, static_cast<GLsizei>(chunk.vboSize));
+            glBufferAddressRangeNV(GL_VERTEX_ATTRIB_ARRAY_ADDRESS_NV, 1, chunk.aboADDR, static_cast<GLsizei>(chunk.aboSize));
+            glBufferAddressRangeNV(GL_ELEMENT_ARRAY_ADDRESS_NV, 0, chunk.iboADDR, static_cast<GLsizei>(chunk.iboSize));
           }
           else
           {
-            glBindVertexBuffer(0, chunk.vboGL, 0, res->m_vertexSize);
-            glBindVertexBuffer(1, chunk.aboGL, 0, res->m_vertexAttributeSize);
+            glBindVertexBuffer(0, chunk.vboGL, 0, static_cast<GLsizei>(res->m_vertexSize));
+            glBindVertexBuffer(1, chunk.aboGL, 0, static_cast<GLsizei>(res->m_vertexAttributeSize));
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk.iboGL);
           }
 

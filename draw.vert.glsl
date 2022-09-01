@@ -99,7 +99,7 @@ out float gl_ClipDistance[NUM_CLIPPING_PLANES];
 #endif
 
 //////////////////////////////////////////////////
-// EXECUTION
+// VERTEX EXECUTION
 
 void main()
 {

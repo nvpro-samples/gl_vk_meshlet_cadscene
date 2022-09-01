@@ -152,21 +152,17 @@ uint getCullBits(vec4 hPos)
   cullBits |= hPos.z <  0      ? 16 : 0;
 #endif
   cullBits |= hPos.z >  hPos.w ? 32 : 0;
-  cullBits |= hPos.w <= 0      ? 64 : 0; 
+  cullBits |= hPos.w <= 0      ? 64 : 0;
   return cullBits;
 }
 
-void pixelBboxEpsilon(inout vec2 pixelMin, inout vec2 pixelMax)
+bool pixelBboxCull(vec2 pixelMin, vec2 pixelMax) 
 {
   // Apply some safety around the bbox to take into account fixed point rasterization.
   // This logic will only work without MSAA active.
-  
   const float epsilon = (1.0 / 256.0);
   pixelMin -= epsilon;
   pixelMax += epsilon;
-}
-
-bool pixelBboxCull(vec2 pixelMin, vec2 pixelMax){
   // bbox culling
   pixelMin = round(pixelMin);
   pixelMax = round(pixelMax);
@@ -174,7 +170,6 @@ bool pixelBboxCull(vec2 pixelMin, vec2 pixelMax){
 }
 
 //////////////////////////////////////////////////////////////////
-
 
 vec4 getBoxCorner(vec3 bboxMin, vec3 bboxMax, int n)
 {
@@ -237,7 +232,6 @@ bool earlyCull(uvec4 meshletDesc, in ObjectData object)
 #if USE_EARLY_SUBPIXELCULL && USE_SUBPIXELCULL
   vec2 pixelMin = (clipMin.xy * 0.5 + 0.5) * scene.viewportTaskCull;
   vec2 pixelMax = (clipMax.xy * 0.5 + 0.5) * scene.viewportTaskCull;
-  pixelBboxEpsilon(pixelMin, pixelMax);
   bool subpixel = pixelBboxCull(pixelMin, pixelMax);
 #else
   bool subpixel = false;
@@ -288,8 +282,6 @@ bool testTriangle(vec2 a, vec2 b, vec2 c, float winding, bool frustum)
   // compute the min and max in each X and Y direction
   vec2 pixelMin = min(a,min(b,c));
   vec2 pixelMax = max(a,max(b,c));
-  
-  pixelBboxEpsilon(pixelMin, pixelMax);
 #endif
 
 #if USE_VIEWPORTCULL
