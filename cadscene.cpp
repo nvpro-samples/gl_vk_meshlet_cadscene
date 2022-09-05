@@ -431,9 +431,9 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
     nvmath::vec4f shift = dim * 1.05f;
 
-    float u;
-    float v;
-    float w;
+    float u = 0;
+    float v = 0;
+    float w = 0;
 
     switch(numAxis)
     {
@@ -442,12 +442,12 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
         break;
       case 2:
         u = float(c % sq);
-        v = static_cast<float>(c) / static_cast<float>(sq);
+        v = float(c / sq);
         break;
       case 3:
         u = float(c % sq);
         v = float((c / sq) % sq);
-        w = static_cast<float>(c) / static_cast<float>(sq * sq);
+        w = float((c) / (sq * sq));
         break;
       default:
         assert(false);
