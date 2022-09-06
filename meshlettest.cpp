@@ -327,6 +327,7 @@ public:
     m_contextInfo.addDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesEXT);
     m_contextInfo.addDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, true, &baryFeatures);
     m_contextInfo.addDeviceExtension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME, true, &pipePropFeatures);
+    m_contextInfo.addDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, true, NULL);
 #if 1
     m_contextInfo.removeInstanceLayer("VK_LAYER_KHRONOS_validation");
 #endif
