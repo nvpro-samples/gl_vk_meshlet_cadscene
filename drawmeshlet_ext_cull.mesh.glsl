@@ -598,6 +598,9 @@ void main()
   uint readBegin = primStart * 4;
   u8vec4 iterated_topologies[MESHLET_PRIMITIVE_ITERATIONS];
 #endif
+#if EXT_USE_ANY_COMPACTION && !EXT_COMPACT_PRIMITIVE_OUTPUT && HW_CULL_PRIMITIVE
+  bool iterated_primVisible[MESHLET_PRIMITIVE_ITERATIONS];
+#endif
   
   UNROLL_LOOP
   for (uint i = 0; i < uint(MESHLET_PRIMITIVE_ITERATIONS); i++)
@@ -670,13 +673,16 @@ void main()
       #endif
       }
     #else
-      #if !EXT_COMPACT_PRIMITIVE_OUTPUT
+      #if !EXT_COMPACT_PRIMITIVE_OUTPUT && !HW_CULL_PRIMITIVE
         if (!primVisible) {
           s_tempPrimitives[prim] = u8vec4(0);
         }
       #endif
       #if !(EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
         iterated_topologies[i] = primVisible ? topology : u8vec4(0);
+      #endif
+      #if !EXT_COMPACT_PRIMITIVE_OUTPUT && HW_CULL_PRIMITIVE
+        iterated_primVisible[i] = primVisible;
       #endif
     #endif
 
@@ -830,6 +836,9 @@ void main()
       topology.x = s_remapVertices[topology.x];
       topology.y = s_remapVertices[topology.y];
       topology.z = s_remapVertices[topology.z];
+    #endif
+    #if !EXT_COMPACT_PRIMITIVE_OUTPUT && HW_CULL_PRIMITIVE
+      gl_MeshPrimitivesEXT[prim].gl_CullPrimitiveEXT = !iterated_primVisible[i];
     #endif
       gl_PrimitiveTriangleIndicesEXT[prim] = uvec3(topology.x, topology.y, topology.z);
     #if SHOW_PRIMIDS
