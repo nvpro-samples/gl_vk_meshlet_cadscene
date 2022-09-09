@@ -416,7 +416,10 @@ void ResourcesVK::deinit()
 
 bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepend)
 {
-  m_shaderManager.init(m_device);
+  // EXT_mesh_shader is only available in Vulkan 1.3, and shaderc complains if we don't pass 1.3
+  const bool hasExtMesh = m_context->hasDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+
+  m_shaderManager.init(m_device, 1, hasExtMesh ? 3 : 2);
   m_shaderManager.m_filetype = nvh::ShaderFileManager::FILETYPE_GLSL;
 
   m_shaderManager.addDirectory(path);
