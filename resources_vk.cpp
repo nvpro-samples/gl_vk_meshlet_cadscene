@@ -1058,15 +1058,17 @@ void ResourcesVK::initPipes()
 
   // enable manually for debugging etc.
   bool dumpPipeInternals = false && m_context->hasDeviceExtension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
-
+  
+  // ensures the assumption in `Sample::getShaderPrepend()` that this value is used for mesh-shaders is actually true
   VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT rss_info = {
-    .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT,
-    .requiredSubgroupSize = m_context->m_physicalInfo.properties11.subgroupSize,
-  };
+      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT};
+  rss_info.requiredSubgroupSize = m_context->m_physicalInfo.properties11.subgroupSize;
 
-  VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT *rss_info_ptr = NULL;
-  if (m_context->hasDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME))
+  VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT* rss_info_ptr = nullptr;
+  if(m_context->hasDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME))
+  {
     rss_info_ptr = &rss_info;
+  }
 
   for(uint32_t isNV = 0; isNV < 2; isNV++)
   {
@@ -1090,7 +1092,7 @@ void ResourcesVK::initPipes()
       stages[0].pNext         = rss_info_ptr;
       stages[1].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
       stages[1].module        = m_shaderManager.get(shaders.mesh_fragment);
-      stages[1].pNext         = NULL;
+      stages[1].pNext         = nullptr;
 
       result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &setup.pipeline);
       assert(result == VK_SUCCESS);
@@ -1111,7 +1113,7 @@ void ResourcesVK::initPipes()
       stages[1].pNext         = rss_info_ptr;
       stages[2].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
       stages[2].module        = m_shaderManager.get(shaders.mesh_fragment);
-      stages[2].pNext         = NULL;
+      stages[2].pNext         = nullptr;
 
       result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &setup.pipelineTask);
       assert(result == VK_SUCCESS);
@@ -1130,7 +1132,7 @@ void ResourcesVK::initPipes()
       stages[0].pNext         = rss_info_ptr;
       stages[1].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
       stages[1].module        = m_shaderManager.get(shaders.mesh_fragment);
-      stages[1].pNext         = NULL;
+      stages[1].pNext         = nullptr;
 
       result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &setup.pipelineCull);
       assert(result == VK_SUCCESS);
@@ -1146,7 +1148,7 @@ void ResourcesVK::initPipes()
       stages[1].pNext         = rss_info_ptr;
       stages[2].stage         = VK_SHADER_STAGE_FRAGMENT_BIT;
       stages[2].module        = m_shaderManager.get(shaders.mesh_fragment);
-      stages[2].pNext         = NULL;
+      stages[2].pNext         = nullptr;
 
       result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &setup.pipelineCullTask);
       assert(result == VK_SUCCESS);
