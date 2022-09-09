@@ -596,6 +596,7 @@ void main()
   uint outPrimCount = 0;
 #if !(EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
   uint readBegin = primStart * 4;
+  u8vec4 iterated_topologies[MESHLET_PRIMITIVE_ITERATIONS];
 #endif
   
   UNROLL_LOOP
@@ -668,10 +669,15 @@ void main()
         gl_MeshPrimitivesEXT[prim].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + uint(topology.w));
       #endif
       }
-    #elif !EXT_COMPACT_PRIMITIVE_OUTPUT
-      if (!primVisible) {
-        s_tempPrimitives[prim] = u8vec4(0);
-      }
+    #else
+      #if !EXT_COMPACT_PRIMITIVE_OUTPUT
+        if (!primVisible) {
+          s_tempPrimitives[prim] = u8vec4(0);
+        }
+      #endif
+      #if !(EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
+        iterated_topologies[i] = primVisible ? topology : u8vec4(0);
+      #endif
     #endif
 
     #if USE_VERTEX_CULL
@@ -814,7 +820,11 @@ void main()
   {
     uint prim = laneID + i * WORKGROUP_SIZE;
     if (prim < outPrimCount) {
+    #if EXT_COMPACT_PRIMITIVE_OUTPUT || (EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
       u8vec4 topology = s_tempPrimitives[prim];
+    #else
+      u8vec4 topology = iterated_topologies[i];
+    #endif
     #if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT
       // re-index vertices to new output vertex slots
       topology.x = s_remapVertices[topology.x];
