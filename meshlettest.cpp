@@ -296,6 +296,7 @@ public:
     m_tweak.extLocalInvocationVertexOutput    = m_meshPropertiesEXT.prefersLocalInvocationVertexOutput != 0;
     m_tweak.extMeshWorkGroupInvocations       = m_meshPropertiesEXT.maxPreferredMeshWorkGroupInvocations;
     m_tweak.extTaskWorkGroupInvocations       = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
+    m_tweak.numTaskMeshlets                   = m_tweak.extTaskWorkGroupInvocations;
   }
 #endif
 
@@ -865,7 +866,7 @@ void Sample::processUI(int width, int height, double time)
     {
       m_ui.enumCombobox(GUI_MESHLET_VERTICES, "meshlet vertices", &m_modelConfig.meshVertexCount);
       m_ui.enumCombobox(GUI_MESHLET_PRIMITIVES, "meshlet primitives", &m_modelConfig.meshPrimitiveCount);
-      m_ui.enumCombobox(GUI_MESHLET_VERTICES, "task meshlet count", &m_tweak.numTaskMeshlets);
+      m_ui.enumCombobox(GUI_TASK_MESHLETS, "task meshlet count", &m_tweak.numTaskMeshlets);
       ImGuiH::InputIntClamped("task min. meshlets\n0 disables task stage", &m_tweak.minTaskMeshlets, 0, 256, 1, 16,
                               ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::SliderFloat("task pixel cull", &m_tweak.pixelCull, 0.0f, 1.0f, "%.2f");
@@ -1281,6 +1282,7 @@ void Sample::setupConfigParameters()
   m_parameterList.add("maxgroups", &m_tweak.maxGroups);
   m_parameterList.add("indexthreshold", &m_tweak.indexThreshold);
   m_parameterList.add("taskminmeshlets", &m_tweak.minTaskMeshlets);
+  m_parameterList.add("tasknummeshlets", &m_tweak.numTaskMeshlets);
   m_parameterList.add("taskpixelcull", &m_tweak.pixelCull);
 
   m_parameterList.add("shaderprepend", &m_shaderprepend);
