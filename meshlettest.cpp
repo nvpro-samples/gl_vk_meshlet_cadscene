@@ -792,6 +792,7 @@ bool Sample::begin()
     m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 84, "84");
     m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 96, "96");
     m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 126, "126");
+    m_ui.enumAdd(GUI_MESHLET_PRIMITIVES, 128, "128");
 
     m_ui.enumAdd(GUI_THREADS, 32, "32");
     m_ui.enumAdd(GUI_THREADS, 64, "64");
