@@ -427,7 +427,7 @@ inline uint32_t findMSB(uint32_t value)
 #else
 inline uint32_t findMSB(uint32_t value)
 {
-  uint32_t idx = __builtin_clz(value);
+  uint32_t idx = 32 - __builtin_clz(value);
   return idx;
 }
 #endif
