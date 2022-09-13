@@ -288,7 +288,7 @@ vec4 getExtra( uint vidx, uint xtra ){
   // even for primitive culling we hijack
   // the output values
   void primcull_setVertexClip(uint vert, uint mask) {
-  #if USE_MESH_FRUSTUMCULL
+  #if USE_MESH_FRUSTUMCULL && USE_CULLBITS
     OUT[vert].wNormal.z = uintBitsToFloat(mask);
   #endif
   }
@@ -519,7 +519,7 @@ void main()
       vec2 b = primcull_getVertexScreen(ib);
       vec2 c = primcull_getVertexScreen(ic);
 
-    #if USE_MESH_FRUSTUMCULL
+    #if USE_MESH_FRUSTUMCULL && USE_CULLBITS
       // if the task-shader is active and does the frustum culling
       // then we normally don't execute this here
       uint abits = primcull_getVertexClip(ia);
@@ -527,7 +527,12 @@ void main()
       uint cbits = primcull_getVertexClip(ic);
 
       primVisible = testTriangle(a.xy, b.xy, c.xy, 1.0, abits, bbits, cbits);
+    #elif USE_MESH_FRUSTUMCULL
+      // the simple viewport culling here only does 2D check
+      primVisible = testTriangle(a.xy, b.xy, c.xy, 1.0, true);
     #else
+      // assumes all heavy lifting on frustum culling is done before
+      // either by task-shader or indirect draws etc. (not used in this sample)
       primVisible = testTriangle(a.xy, b.xy, c.xy, 1.0, false);
     #endif
 

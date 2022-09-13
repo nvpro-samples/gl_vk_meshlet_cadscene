@@ -645,7 +645,7 @@ void main()
       vec2 cs = getScreenPos(ch);
     #endif
 
-    #if USE_MESH_FRUSTUMCULL && HW_TEMPVERTEX != HW_TEMPVERTEX_SPOS
+    #if USE_MESH_FRUSTUMCULL && HW_TEMPVERTEX != HW_TEMPVERTEX_SPOS && USE_CULLBITS
       // if the task-shader is active and does the frustum culling
       // then we normally don't execute this here
       uint abits = getCullBits(ah);
@@ -653,7 +653,12 @@ void main()
       uint cbits = getCullBits(ch);
 
       primVisible = testTriangle(as.xy, bs.xy, cs.xy, 1.0, abits, bbits, cbits);
+    #elif USE_MESH_FRUSTUMCULL
+      // the simple viewport culling here only does 2D check
+      primVisible = testTriangle(as.xy, bs.xy, cs.xy, 1.0, true);
     #else
+      // assumes all heavy lifting on frustum culling is done before
+      // either by task-shader or indirect draws etc. (not used in this sample)
       primVisible = testTriangle(as.xy, bs.xy, cs.xy, 1.0, false);
     #endif
       

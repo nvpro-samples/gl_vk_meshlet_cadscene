@@ -173,6 +173,13 @@
 ////////////////////////////////////////////////////
 ////////////////////////////////////////////////////
 
+// Misc settings
+
+// in our sample near/far clipping doesn't really apply much so
+// this as disabled for now
+#define USE_CULLBITS  0
+
+
 // Input Mesh Vertex related
 
 #define VERTEX_POS 0
