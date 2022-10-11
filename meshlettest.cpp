@@ -204,7 +204,7 @@ public:
     uint32_t  maxGroups           = -1;
     int32_t   indexThreshold      = 0;
     uint32_t  minTaskMeshlets     = 16;
-    uint32_t  numTaskMeshlets     = 32;
+    uint32_t  numTaskMeshlets     = ~0;
     vec3f     clipPosition        = vec3f(0.5f);
 #if IS_VULKAN
     bool     extLocalInvocationVertexOutput    = false;
@@ -288,15 +288,19 @@ public:
   std::string getShaderPrepend() const;
 
 #if IS_VULKAN
-  void resetEXTtweaks()
+  void resetEXTtweaks(bool force)
   {
     m_tweak.extCompactPrimitiveOutput         = m_meshPropertiesEXT.prefersCompactPrimitiveOutput != 0;
     m_tweak.extCompactVertexOutput            = m_meshPropertiesEXT.prefersCompactVertexOutput != 0;
     m_tweak.extLocalInvocationPrimitiveOutput = m_meshPropertiesEXT.prefersLocalInvocationPrimitiveOutput != 0;
     m_tweak.extLocalInvocationVertexOutput    = m_meshPropertiesEXT.prefersLocalInvocationVertexOutput != 0;
-    m_tweak.extMeshWorkGroupInvocations       = m_meshPropertiesEXT.maxPreferredMeshWorkGroupInvocations;
-    m_tweak.extTaskWorkGroupInvocations       = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
-    m_tweak.numTaskMeshlets                   = m_tweak.extTaskWorkGroupInvocations;
+
+    if(m_tweak.extMeshWorkGroupInvocations == ~0 || force)
+      m_tweak.extMeshWorkGroupInvocations     = m_meshPropertiesEXT.maxPreferredMeshWorkGroupInvocations;
+    if(m_tweak.extTaskWorkGroupInvocations == ~0 || force)
+      m_tweak.extTaskWorkGroupInvocations     = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
+    if(m_tweak.numTaskMeshlets == ~0 || force)
+      m_tweak.numTaskMeshlets                 = m_tweak.extTaskWorkGroupInvocations;
   }
 #endif
 
@@ -709,11 +713,7 @@ bool Sample::begin()
     props2.pNext                       = &m_meshPropertiesEXT;
     vkGetPhysicalDeviceProperties2(m_context.m_physicalDevice, &props2);
 
-    // pseudo hack to detect commandline changing defaults
-    if(m_tweak.extMeshWorkGroupInvocations == ~0)
-    {
-      resetEXTtweaks();
-    }
+    resetEXTtweaks(false);
   }
 
   m_supportsFragBarycentrics = m_context.hasDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
@@ -883,7 +883,7 @@ void Sample::processUI(int width, int height, double time)
     {
       if(ImGui::Button("RESET to implementation DEFAULTS"))
       {
-        resetEXTtweaks();
+        resetEXTtweaks(true);
       }
       ImGui::Checkbox("compact vertex output", &m_tweak.extCompactVertexOutput);
       ImGui::Checkbox("compact primitive output", &m_tweak.extCompactPrimitiveOutput);
@@ -1306,6 +1306,11 @@ void Sample::setupConfigParameters()
   m_parameterList.add("clippos", m_tweak.clipPosition.vec_array, nullptr, 3);
 
   m_parameterList.add("message", &m_messageString);
+
+#if IS_VULKAN
+  m_parameterList.add("meshwgsize", &m_tweak.extMeshWorkGroupInvocations);
+  m_parameterList.add("taskwgsize", &m_tweak.extTaskWorkGroupInvocations);
+#endif
 }
 
 
