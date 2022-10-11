@@ -64,6 +64,7 @@ public:
   bool m_fp16              = false;
   bool m_cullBackFace      = false;
   bool m_clipping          = false;
+  uint32_t m_subgroupSize  = 0;
 
   uint32_t m_frame = 0;
 
