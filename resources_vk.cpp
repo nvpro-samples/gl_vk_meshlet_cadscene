@@ -1065,7 +1065,7 @@ void ResourcesVK::initPipes()
   // ensures the assumption in `Sample::getShaderPrepend()` that this value is used for mesh-shaders is actually true
   VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT rss_info = {
       VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT};
-  rss_info.requiredSubgroupSize = m_context->m_physicalInfo.properties11.subgroupSize;
+  rss_info.requiredSubgroupSize = m_subgroupSize;
 
   VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT* rss_info_ptr = nullptr;
   if(m_context->hasDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME))

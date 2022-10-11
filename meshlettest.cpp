@@ -166,6 +166,7 @@ class Sample
     GUI_TASK_MESHLETS,
     GUI_THREADS,
     GUI_MODEL,
+    GUI_SUBGROUP_SIZE,
   };
 
   enum DemoScene
@@ -213,6 +214,7 @@ public:
     bool     extCompactPrimitiveOutput         = false;
     uint32_t extMeshWorkGroupInvocations       = ~0;
     uint32_t extTaskWorkGroupInvocations       = ~0;
+    uint32_t subgroupSize                      = ~0;
 #endif
   };
 
@@ -259,6 +261,8 @@ public:
 #if IS_VULKAN
   bool                                    m_supportsEXT = false;
   VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
+  bool                                          m_supportsSubgroupControl = false;
+  VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
 #endif
 
   int    m_frames        = 0;
@@ -301,6 +305,11 @@ public:
       m_tweak.extTaskWorkGroupInvocations     = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
     if(m_tweak.numTaskMeshlets == ~0 || force)
       m_tweak.numTaskMeshlets                 = m_tweak.extTaskWorkGroupInvocations;
+  }
+  void resetSubgroupTweaks(bool force)
+  {
+    if(m_tweak.subgroupSize == ~0 || force)
+      m_tweak.subgroupSize                    = m_context.m_physicalInfo.properties11.subgroupSize;
   }
 #endif
 
@@ -453,13 +462,14 @@ std::string Sample::getShaderPrepend() const
     // we want to use as much threads as required to output all vertices/primitives/meshlets
     // but not more than what is preferred.
 
-    uint32_t meshSubgroupSize = m_context.m_physicalInfo.properties11.subgroupSize;
+    uint32_t meshSubgroupSize = m_tweak.subgroupSize;
+
     uint32_t meshSubgroupCount =
         (std::min(std::max(m_modelConfig.meshVertexCount, m_modelConfig.meshPrimitiveCount), m_tweak.extMeshWorkGroupInvocations)
          + meshSubgroupSize - 1)
         / meshSubgroupSize;
 
-    uint32_t taskSubgroupSize = m_context.m_physicalInfo.properties11.subgroupSize;
+    uint32_t taskSubgroupSize = m_tweak.subgroupSize;
     uint32_t taskSubgroupCount =
         (std::min(m_tweak.numTaskMeshlets, m_tweak.extTaskWorkGroupInvocations) + taskSubgroupSize - 1) / taskSubgroupSize;
 
@@ -559,6 +569,10 @@ void Sample::initRenderer(int typesort)
     m_resources->m_cullBackFace    = m_tweak.useBackFaceCull;
     m_resources->m_clipping        = m_tweak.useClipping;
     m_resources->m_extraAttributes = m_modelConfig.extraAttributes;
+#if IS_VULKAN
+    m_resources->m_subgroupSize    = m_tweak.subgroupSize;
+#endif
+
 #if IS_OPENGL
     bool valid = m_resources->init(&m_contextWindow, &m_profiler);
 #elif IS_VULKAN
@@ -690,6 +704,16 @@ bool Sample::begin()
     return false;
   }
 
+  if(m_context.hasDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME))
+  {
+    m_supportsSubgroupControl = true;
+
+    VkPhysicalDeviceProperties2 props2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    props2.pNext                       = &m_subgroupSizeProperties;
+    vkGetPhysicalDeviceProperties2(m_context.m_physicalDevice, &props2);
+  }
+  resetSubgroupTweaks(false);
+
   if(m_context.hasDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME) || m_context.hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME))
   {
     VkShaderStageFlags stageFlags = VK_SHADER_STAGE_TASK_BIT_NV | VK_SHADER_STAGE_MESH_BIT_NV;
@@ -802,6 +826,17 @@ bool Sample::begin()
 
     m_ui.enumAdd(GUI_MODEL, DEMOSCENE_WORLDCAR, "worldcar");
     m_ui.enumAdd(GUI_MODEL, DEMOSCENE_BLADE, "blade");
+
+#if IS_VULKAN
+    if(m_supportsSubgroupControl)
+    {
+      for(int subgroupSize  = m_subgroupSizeProperties.minSubgroupSize;
+              subgroupSize <= m_subgroupSizeProperties.maxSubgroupSize;
+              subgroupSize *= 2) {
+        m_ui.enumAdd(GUI_SUBGROUP_SIZE, subgroupSize, std::to_string(subgroupSize).c_str());
+      }
+    }
+#endif
   }
 
   if(!m_customModel)
@@ -892,6 +927,14 @@ void Sample::processUI(int width, int height, double time)
       // ImGui::Checkbox("local invocation primitive output", &m_tweak.extLocalInvocationPrimitiveOutput);
       m_ui.enumCombobox(GUI_THREADS, "mesh workgroup size", &m_tweak.extMeshWorkGroupInvocations);
       m_ui.enumCombobox(GUI_THREADS, "task workgroup size", &m_tweak.extTaskWorkGroupInvocations);
+    }
+    if(m_supportsSubgroupControl && ImGui::CollapsingHeader("Subgroup Size Control Preferences"))
+    {
+      if(ImGui::Button("RESET to implementation DEFAULTS"))
+      {
+        resetSubgroupTweaks(true);
+      }
+      m_ui.enumCombobox(GUI_SUBGROUP_SIZE, "subgroup size", &m_tweak.subgroupSize);
     }
 #endif
 
@@ -1031,6 +1074,7 @@ void Sample::think(double time)
      || tweakChanged(m_tweak.extMeshWorkGroupInvocations) || tweakChanged(m_tweak.extTaskWorkGroupInvocations)
      || tweakChanged(m_tweak.extCompactPrimitiveOutput) || tweakChanged(m_tweak.extCompactVertexOutput)
      || tweakChanged(m_tweak.extLocalInvocationPrimitiveOutput) || tweakChanged(m_tweak.extLocalInvocationVertexOutput)
+     || tweakChanged(m_tweak.subgroupSize)
 #endif
      || modelConfigChanged(m_modelConfig.extraAttributes) || modelConfigChanged(m_modelConfig.meshPrimitiveCount)
      || modelConfigChanged(m_modelConfig.meshVertexCount) || m_shaderprepend != m_lastShaderPrepend)
@@ -1039,6 +1083,9 @@ void Sample::think(double time)
     m_resources->synchronize();
     m_resources->m_cullBackFace = m_tweak.useBackFaceCull;
     m_resources->m_clipping     = m_tweak.useClipping;
+#if IS_VULKAN
+    m_resources->m_subgroupSize = m_tweak.subgroupSize;
+#endif
     m_resources->reloadPrograms(getShaderPrepend());
   }
   else if(m_windowState.onPress(KEY_C))
@@ -1310,6 +1357,7 @@ void Sample::setupConfigParameters()
 #if IS_VULKAN
   m_parameterList.add("meshwgsize", &m_tweak.extMeshWorkGroupInvocations);
   m_parameterList.add("taskwgsize", &m_tweak.extTaskWorkGroupInvocations);
+  m_parameterList.add("subgroupsize", &m_tweak.subgroupSize);
 #endif
 }
 
