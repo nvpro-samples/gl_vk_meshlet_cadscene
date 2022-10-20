@@ -78,7 +78,7 @@ const uint MESHLET_INDICES_ITERATIONS   = ((NVMESHLET_PRIMITIVE_COUNT * 3 + WORK
 #endif
 
 #ifndef USE_INDEX_WRITE_INTRINSIC
-#define USE_INDEX_WRITE_INTRINSIC 0
+#define USE_INDEX_WRITE_INTRINSIC 1
 #endif
 
 /////////////////////////////////////
@@ -148,7 +148,8 @@ const uint MESHLET_INDICES_ITERATIONS   = ((NVMESHLET_PRIMITIVE_COUNT * 3 + WORK
 
   #define primIndices1  ((uint*)primIndices)
   #define primIndices2  primIndices
-
+  #define primIndices_u8 ((uint8_t*)primIndices)
+  
 #endif
 
 /////////////////////////////////////////////////
