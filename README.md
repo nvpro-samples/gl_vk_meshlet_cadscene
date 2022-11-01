@@ -356,7 +356,7 @@ At the cost of some additional latency you can extend this to a total of `32 * 3
 # Building
 Make sure to have installed the [Vulkan-SDK](http://lunarg.com/vulkan-sdk/) (1.1.85.0 or higher). Always use 64-bit build configurations.
 
-For `VK_EXT_mesh_shader` support, make sure that the `shaderc_shared.lib` that is part of the Vulkan SDK actually supports the `GL_EXT_mesh_shader` extension. At the time of release of this updated sample, the SDK might not have this support yet, and you need to build the library yourself or wait a bit.
+For `VK_EXT_mesh_shader` support, make sure that the `shaderc_shared.lib` that is part of the Vulkan SDK actually supports the `GL_EXT_mesh_shader` extension. At the time of release of this updated sample, the SDK might not have this support yet, and you need to build or download the library yourself or wait a bit.
 
 If you are not interested in building the OpenGL exe then use the `BUILD_<projectname>_VULKAN_ONLY` cmake option.
 
@@ -370,6 +370,8 @@ You can provide custom model files (`glTF 2.0`) or config files `.cfg` as comman
 If no argument is provided the default demo scenes are available and can be altered at the top of the UI.
 
 On some drivers there may be issues with the hw barycentrics in OpenGL not rendering the correct result.
+
+Some combinations of shaderc and NVIDIA driver versions cause the application to hang on `VK_EXT_mesh_shader` usage, use the `-noextmeshshader` commandline option to disable it, and only run with support for `VK_NV_mesh_shader`
 
 # History
 

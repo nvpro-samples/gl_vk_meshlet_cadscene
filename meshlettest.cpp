@@ -205,7 +205,7 @@ public:
     uint32_t  maxGroups           = -1;
     int32_t   indexThreshold      = 0;
     uint32_t  minTaskMeshlets     = 16;
-    uint32_t  numTaskMeshlets     = ~0;
+   
     vec3f     clipPosition        = vec3f(0.5f);
 #if IS_VULKAN
     bool     extLocalInvocationVertexOutput    = false;
@@ -215,6 +215,10 @@ public:
     uint32_t extMeshWorkGroupInvocations       = ~0;
     uint32_t extTaskWorkGroupInvocations       = ~0;
     uint32_t subgroupSize                      = ~0;
+    uint32_t numTaskMeshlets                   = ~0;
+#endif
+#if IS_OPENGL
+    uint32_t  numTaskMeshlets = 32;
 #endif
   };
 
@@ -252,6 +256,7 @@ public:
 
   bool                 m_firstConfig = true;
   bool                 m_customModel = false;
+  
   std::string          m_messageString;
   std::string          m_modelFilename;
   vec3f                m_modelUpVector = vec3f(0, 1, 0);
@@ -260,6 +265,7 @@ public:
 
 #if IS_VULKAN
   bool                                    m_supportsEXT = false;
+  bool                                    m_disableEXT  = false;
   VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
   bool                                          m_supportsSubgroupControl = false;
   VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
@@ -738,6 +744,10 @@ bool Sample::begin()
     vkGetPhysicalDeviceProperties2(m_context.m_physicalDevice, &props2);
 
     resetEXTtweaks(false);
+  }
+  else {
+    if(m_tweak.numTaskMeshlets == ~0)
+      m_tweak.numTaskMeshlets = 32;
   }
 
   m_supportsFragBarycentrics = m_context.hasDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
@@ -1358,6 +1368,7 @@ void Sample::setupConfigParameters()
   m_parameterList.add("meshwgsize", &m_tweak.extMeshWorkGroupInvocations);
   m_parameterList.add("taskwgsize", &m_tweak.extTaskWorkGroupInvocations);
   m_parameterList.add("subgroupsize", &m_tweak.subgroupSize);
+  m_parameterList.add("noextmeshshader", &m_disableEXT, true);
 #endif
 }
 
@@ -1375,7 +1386,12 @@ bool Sample::validateConfig()
   {
     m_customModel = true;
   }
-
+#if IS_VULKAN
+  if(m_firstConfig && m_disableEXT)
+  {
+    m_contextInfo.removeDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+  }
+#endif
   m_firstConfig = false;
 
   return true;

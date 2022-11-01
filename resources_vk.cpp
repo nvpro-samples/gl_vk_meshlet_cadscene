@@ -1061,14 +1061,16 @@ void ResourcesVK::initPipes()
 
   // enable manually for debugging etc.
   bool dumpPipeInternals = false && m_context->hasDeviceExtension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
-  
+
   // ensures the assumption in `Sample::getShaderPrepend()` that this value is used for mesh-shaders is actually true
   VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT rss_info = {
       VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT};
   rss_info.requiredSubgroupSize = m_subgroupSize;
 
   VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT* rss_info_ptr = nullptr;
-  if(m_context->hasDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME))
+  // disable this for NVIDIA hw
+  if(m_context->hasDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME)
+     && m_context->m_physicalInfo.properties10.vendorID != 0x10DE)
   {
     rss_info_ptr = &rss_info;
   }

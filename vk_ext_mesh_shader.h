@@ -21,8 +21,10 @@
 
 #include <vulkan/vulkan_core.h>
 
-#ifndef VK_EXT_mesh_shader
+// set to zero if nvvk::extensions_vk.cpp covers this
 #define VK_EXT_mesh_shader_LOCAL 1
+
+#ifndef VK_EXT_mesh_shader
 
 #define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT ((VkStructureType)1000328000)
 #define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT ((VkStructureType)1000328001)
