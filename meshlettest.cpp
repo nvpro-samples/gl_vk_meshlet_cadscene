@@ -359,6 +359,9 @@ public:
         feature->meshShaderQueries = VK_FALSE;
       }
     };
+    // we don't need all queues
+    m_contextInfo.requestedQueues.clear();
+    m_contextInfo.addRequestedQueue(m_contextInfo.defaultQueueGCT);
 #endif
   }
 
