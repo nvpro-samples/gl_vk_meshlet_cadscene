@@ -215,7 +215,7 @@ public:
     uint32_t extMeshWorkGroupInvocations       = ~0;
     uint32_t extTaskWorkGroupInvocations       = ~0;
     uint32_t subgroupSize                      = ~0;
-    uint32_t numTaskMeshlets                   = ~0;
+    uint32_t  numTaskMeshlets     = ~0;
 #endif
 #if IS_OPENGL
     uint32_t  numTaskMeshlets = 32;
@@ -267,7 +267,7 @@ public:
   bool                                    m_supportsEXT = false;
   bool                                    m_disableEXT  = false;
   VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
-  bool                                          m_supportsSubgroupControl = false;
+  bool                                    m_supportsSubgroupControl = false;
   VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
 #endif
 
@@ -351,6 +351,14 @@ public:
 #if 1
     m_contextInfo.removeInstanceLayer("VK_LAYER_KHRONOS_validation");
 #endif
+    m_contextInfo.fnDisableFeatures = [](VkStructureType sType, void* pFeatureStruct) {
+      if(sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT)
+      {
+        auto* feature = reinterpret_cast<VkPhysicalDeviceMeshShaderFeaturesEXT*>(pFeatureStruct);
+        // enabling and not using it may cost a tiny bit of performance on NV hardware
+        feature->meshShaderQueries = VK_FALSE;
+      }
+    };
 #endif
   }
 
@@ -1165,7 +1173,7 @@ void Sample::think(double time)
     {
       float         t        = float(time);
       nvmath::quatf quat     = nvmath::axis_to_quat(m_modelUpVector, t * 0.5f);
-      mat4          rotator  = nvmath::quat_2_mat(quat);
+      mat3          rotator  = nvmath::quat_2_mat(quat);
       vec3          dir      = rotator * (-vec3(1, 1, 1));
       float         distance = 0.4f + sinf(t) * 0.2f;
       m_control.m_viewMatrix = nvmath::look_at(m_control.m_sceneOrbit - (dir * m_control.m_sceneDimension * distance),
@@ -1188,10 +1196,10 @@ void Sample::think(double time)
     sceneUbo.wLightPos   = sceneUbo.viewMatrixIT.row(3);
     sceneUbo.wLightPos.w = 1.0;
 
-    nvmath::vec3 viewDir   = view.row(2);
-    nvmath::vec3 sideDir   = -view.row(0);
-    nvmath::vec3 sideUpDir = view.row(1);
-    sceneUbo.wLightPos += (sideDir + sideUpDir + viewDir * 0.25f) * m_control.m_sceneDimension * 0.25f;
+    nvmath::vec3 viewDir   = nvmath::vec3(view.row(2));
+    nvmath::vec3 sideDir   = nvmath::vec3(-view.row(0));
+    nvmath::vec3 sideUpDir = nvmath::vec3(view.row(1));
+    sceneUbo.wLightPos += nvmath::vec4((sideDir + sideUpDir + viewDir * 0.25f) * m_control.m_sceneDimension * 0.25f, 0.0f);
 
     sceneUbo.wClipPlanes[0] =
         vec4f(-1, 0, 0, nvmath::lerp(m_tweak.clipPosition.x, m_scene.m_bboxInstanced.min.x, m_scene.m_bboxInstanced.max.x));
