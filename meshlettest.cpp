@@ -1008,9 +1008,10 @@ void Sample::processUI(int width, int height, double time)
       auto gpuTimeF = float(m_statsGpuTime);
       if(ImGui::CollapsingHeader("Basic Stats", ImGuiTreeNodeFlags_DefaultOpen))
       {
-        ImGui::Text("         Render GPU [ms]: %2.3f", gpuTimeF / 1000.0f);
-        ImGui::Text("Original Index Size [MB]: %4zu", m_scene.m_iboSize / (1024 * 1024));
-        ImGui::Text("       Meshlet Size [MB]: %4zu", m_scene.m_meshSize / (1024 * 1024));
+        ImGui::Text("         Render GPU [ms]:  %2.3f", gpuTimeF / 1000.0f);
+        ImGui::Text("         Render GPU [FPS]: %d", (int)(1000000.0f / gpuTimeF));
+        ImGui::Text("Original Index Size [MB]:  %4zu", m_scene.m_iboSize / (1024 * 1024));
+        ImGui::Text("       Meshlet Size [MB]:  %4zu", m_scene.m_meshSize / (1024 * 1024));
       }
     }
 
