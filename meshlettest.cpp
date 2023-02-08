@@ -823,6 +823,8 @@ bool Sample::begin()
     m_ui.enumAdd(GUI_MESHLET_VERTICES, 96, "96");
     m_ui.enumAdd(GUI_MESHLET_VERTICES, 128, "128");
 
+    m_ui.enumAdd(GUI_TASK_MESHLETS, 8, "8");
+    m_ui.enumAdd(GUI_TASK_MESHLETS, 16, "16");
     m_ui.enumAdd(GUI_TASK_MESHLETS, 32, "32");
     m_ui.enumAdd(GUI_TASK_MESHLETS, 64, "64");
     m_ui.enumAdd(GUI_TASK_MESHLETS, 96, "96");
