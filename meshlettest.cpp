@@ -298,6 +298,11 @@ public:
   std::string getShaderPrepend() const;
 
 #if IS_VULKAN
+  void fixupNumTaskMeshlets()
+  {
+    m_tweak.numTaskMeshlets = std::max(m_tweak.numTaskMeshlets, m_tweak.subgroupSize);
+  }
+
   void resetEXTtweaks(bool force)
   {
     m_tweak.extCompactPrimitiveOutput         = m_meshPropertiesEXT.prefersCompactPrimitiveOutput != 0;
@@ -310,12 +315,20 @@ public:
     if(m_tweak.extTaskWorkGroupInvocations == ~0 || force)
       m_tweak.extTaskWorkGroupInvocations     = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
     if(m_tweak.numTaskMeshlets == ~0 || force)
+    {
       m_tweak.numTaskMeshlets                 = m_tweak.extTaskWorkGroupInvocations;
+      fixupNumTaskMeshlets();
+    }
   }
   void resetSubgroupTweaks(bool force)
   {
     if(m_tweak.subgroupSize == ~0 || force)
+    {
       m_tweak.subgroupSize                    = m_context.m_physicalInfo.properties11.subgroupSize;
+
+      if(m_tweak.numTaskMeshlets != ~0)
+        fixupNumTaskMeshlets();
+    }
   }
 #endif
 
@@ -755,7 +768,10 @@ bool Sample::begin()
   }
   else {
     if(m_tweak.numTaskMeshlets == ~0)
+    {
       m_tweak.numTaskMeshlets = 32;
+      fixupNumTaskMeshlets();
+    }
   }
 
   m_supportsFragBarycentrics = m_context.hasDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
@@ -1086,6 +1102,11 @@ void Sample::think(double time)
     modelChanged = true;
     loadDemoConfig();
   }
+
+#if IS_VULKAN
+  if (tweakChanged(m_tweak.numTaskMeshlets) || tweakChanged(m_tweak.subgroupSize))
+    fixupNumTaskMeshlets();
+#endif
 
   // trigger recompile of shaders
   if(m_windowState.onPress(KEY_R) || tweakChanged(m_tweak.useBackFaceCull) || tweakChanged(m_tweak.useClipping)
