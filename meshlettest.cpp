@@ -326,6 +326,12 @@ public:
     {
       m_tweak.subgroupSize                    = m_context.m_physicalInfo.properties11.subgroupSize;
 
+      if(m_supportsEXT && m_supportsSubgroupControl) {
+        m_tweak.subgroupSize = std::min({m_tweak.subgroupSize,
+                                         m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations,
+                                         m_meshPropertiesEXT.maxPreferredMeshWorkGroupInvocations});
+      }
+
       if(m_tweak.numTaskMeshlets != ~0)
         fixupNumTaskMeshlets();
     }
@@ -739,7 +745,6 @@ bool Sample::begin()
     props2.pNext                       = &m_subgroupSizeProperties;
     vkGetPhysicalDeviceProperties2(m_context.m_physicalDevice, &props2);
   }
-  resetSubgroupTweaks(false);
 
   if(m_context.hasDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME) || m_context.hasDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME))
   {
@@ -763,9 +768,11 @@ bool Sample::begin()
     VkPhysicalDeviceProperties2 props2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
     props2.pNext                       = &m_meshPropertiesEXT;
     vkGetPhysicalDeviceProperties2(m_context.m_physicalDevice, &props2);
-
-    resetEXTtweaks(false);
   }
+
+  resetSubgroupTweaks(false);
+  if(m_supportsEXT)
+    resetEXTtweaks(false);
   else {
     if(m_tweak.numTaskMeshlets == ~0)
     {
