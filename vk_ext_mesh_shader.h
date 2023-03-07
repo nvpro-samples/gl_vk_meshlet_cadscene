@@ -21,8 +21,14 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include "nvvk/extensions_vk.hpp"
+
+#if defined(NVVK_HAS_VK_EXT_mesh_shader)
 // set to zero if nvvk::extensions_vk.cpp covers this
+#define VK_EXT_mesh_shader_LOCAL 0
+#else
 #define VK_EXT_mesh_shader_LOCAL 1
+#endif
 
 #ifndef VK_EXT_mesh_shader
 

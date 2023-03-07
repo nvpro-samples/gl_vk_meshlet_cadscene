@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -679,6 +679,6 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
     statsGlobal.fprint(stdout);
   }
 
-  LOGI("meshlet total: %9d meshlets, %7d KB (w %.2f)\n", groups, m_meshSize / 1024,
+  LOGI("meshlet total: %9d meshlets, %7zu KB (w %.2f)\n", groups, m_meshSize / 1024,
        (double(m_meshSize) / double(meshActualSizeTotal) - 1.0))
 }

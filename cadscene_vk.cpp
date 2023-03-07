@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -210,7 +210,7 @@ void CadSceneVK::init(const CadScene& cadscene, VkDevice device, VkPhysicalDevic
   {
     VkDeviceSize allocatedSize, usedSize;
     m_memAllocator.getUtilization(allocatedSize, usedSize);
-    LOGI("scene geometry: used %d KB allocated %d KB\n", usedSize / 1024, allocatedSize / 1024)
+    LOGI("scene geometry: used %" PRIu64 " KB allocated %" PRIu64 " KB\n", usedSize / 1024, allocatedSize / 1024)
   }
 
   ScopeStaging staging(&m_memAllocator, queue, queueFamilyIndex);
