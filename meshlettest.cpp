@@ -934,7 +934,7 @@ void Sample::processUI(int width, int height, double time)
 #if IS_VULKAN
     if(m_supportsEXT && ImGui::CollapsingHeader("EXT Mesh Shading Preferences"))
     {
-      if(ImGui::Button("RESET to implementation DEFAULTS"))
+      if(ImGui::Button("RESET to implementation DEFAULTS##ext prefs"))
       {
         resetEXTtweaks(true);
       }
@@ -948,7 +948,7 @@ void Sample::processUI(int width, int height, double time)
     }
     if(m_supportsSubgroupControl && ImGui::CollapsingHeader("Subgroup Size Control Preferences"))
     {
-      if(ImGui::Button("RESET to implementation DEFAULTS"))
+      if(ImGui::Button("RESET to implementation DEFAULTS##subgroups"))
       {
         resetSubgroupTweaks(true);
       }
