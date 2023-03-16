@@ -215,7 +215,7 @@ public:
     uint32_t extMeshWorkGroupInvocations       = ~0;
     uint32_t extTaskWorkGroupInvocations       = ~0;
     uint32_t subgroupSize                      = ~0;
-    uint32_t  numTaskMeshlets     = ~0;
+    uint32_t numTaskMeshlets                   = ~0;
 #endif
 #if IS_OPENGL
     uint32_t  numTaskMeshlets = 32;
@@ -267,7 +267,7 @@ public:
   bool                                    m_supportsEXT = false;
   bool                                    m_disableEXT  = false;
   VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
-  bool                                    m_supportsSubgroupControl = false;
+  bool                                          m_supportsSubgroupControl = false;
   VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
 #endif
 
