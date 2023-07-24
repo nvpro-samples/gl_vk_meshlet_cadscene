@@ -205,8 +205,8 @@ public:
     uint32_t  maxGroups           = -1;
     int32_t   indexThreshold      = 0;
     uint32_t  minTaskMeshlets     = 16;
-   
-    vec3f     clipPosition        = vec3f(0.5f);
+
+    vec3f clipPosition = vec3f(0.5f);
 #if IS_VULKAN
     bool     extLocalInvocationVertexOutput    = false;
     bool     extLocalInvocationPrimitiveOutput = false;
@@ -218,7 +218,7 @@ public:
     uint32_t numTaskMeshlets                   = ~0;
 #endif
 #if IS_OPENGL
-    uint32_t  numTaskMeshlets = 32;
+    uint32_t numTaskMeshlets = 32;
 #endif
   };
 
@@ -254,9 +254,9 @@ public:
   std::string            m_viewpointFilename = "viewpoints.txt";
   std::vector<ViewPoint> m_viewPoints;
 
-  bool                 m_firstConfig = true;
-  bool                 m_customModel = false;
-  
+  bool m_firstConfig = true;
+  bool m_customModel = false;
+
   std::string          m_messageString;
   std::string          m_modelFilename;
   vec3f                m_modelUpVector = vec3f(0, 1, 0);
@@ -264,10 +264,10 @@ public:
   CadScene::LoadConfig m_lastModelConfig;
 
 #if IS_VULKAN
-  bool                                    m_supportsEXT = false;
-  bool                                    m_disableEXT  = false;
+  bool m_supportsEXT = false;
+  bool m_disableEXT  = false;
   VkPhysicalDeviceMeshShaderPropertiesEXT m_meshPropertiesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT};
-  bool                                          m_supportsSubgroupControl = false;
+  bool m_supportsSubgroupControl = false;
   VkPhysicalDeviceSubgroupSizeControlProperties m_subgroupSizeProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
 #endif
 
@@ -306,16 +306,16 @@ public:
     m_tweak.extLocalInvocationVertexOutput    = m_meshPropertiesEXT.prefersLocalInvocationVertexOutput != 0;
 
     if(m_tweak.extMeshWorkGroupInvocations == ~0 || force)
-      m_tweak.extMeshWorkGroupInvocations     = m_meshPropertiesEXT.maxPreferredMeshWorkGroupInvocations;
+      m_tweak.extMeshWorkGroupInvocations = m_meshPropertiesEXT.maxPreferredMeshWorkGroupInvocations;
     if(m_tweak.extTaskWorkGroupInvocations == ~0 || force)
-      m_tweak.extTaskWorkGroupInvocations     = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
+      m_tweak.extTaskWorkGroupInvocations = m_meshPropertiesEXT.maxPreferredTaskWorkGroupInvocations;
     if(m_tweak.numTaskMeshlets == ~0 || force)
-      m_tweak.numTaskMeshlets                 = m_tweak.extTaskWorkGroupInvocations;
+      m_tweak.numTaskMeshlets = m_tweak.extTaskWorkGroupInvocations;
   }
   void resetSubgroupTweaks(bool force)
   {
     if(m_tweak.subgroupSize == ~0 || force)
-      m_tweak.subgroupSize                    = m_context.m_physicalInfo.properties11.subgroupSize;
+      m_tweak.subgroupSize = m_context.m_physicalInfo.properties11.subgroupSize;
   }
 #endif
 
@@ -338,17 +338,20 @@ public:
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
     static VkPhysicalDeviceMeshShaderFeaturesNV meshFeaturesNV = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV};
     static VkPhysicalDeviceMeshShaderFeaturesEXT meshFeaturesEXT = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
-    static VkPhysicalDeviceFragmentShaderBarycentricFeaturesNV baryFeatures = {
+    static VkPhysicalDeviceFragmentShaderBarycentricFeaturesNV baryFeaturesNV = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_NV};
+    static VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR baryFeaturesKHR = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR};
     m_contextInfo.apiMajor              = 1;
-    m_contextInfo.apiMinor              = 2;
+    m_contextInfo.apiMinor              = 3;
     m_contextInfo.compatibleDeviceIndex = Resources::s_vkDevice;
     m_contextInfo.addDeviceExtension(VK_NV_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesNV);
     m_contextInfo.addDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME, true, &meshFeaturesEXT);
-    m_contextInfo.addDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, true, &baryFeatures);
+    m_contextInfo.addDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, true, &baryFeaturesNV);
+    m_contextInfo.addDeviceExtension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME, true, &baryFeaturesKHR);
     m_contextInfo.addDeviceExtension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME, true, &pipePropFeatures);
     m_contextInfo.addDeviceExtension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, true, NULL);
-#if 1
+#if 0
     m_contextInfo.removeInstanceLayer("VK_LAYER_KHRONOS_validation");
 #endif
     m_contextInfo.fnDisableFeatures = [](VkStructureType sType, void* pFeatureStruct) {
@@ -463,6 +466,11 @@ std::string Sample::getShaderPrepend() const
              + nvh::stringFormat("#define SHOW_CULLED %d\n", m_tweak.showCulled ? 1 : 0);
 
 #if IS_VULKAN
+  if(m_context.hasDeviceExtension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME))
+  {
+    prepend += "#define USE_BARYCENTRIC_SHADING_EXT 1\n";
+  }
+
   if(m_supportsEXT)
   {
     prepend +=
@@ -587,7 +595,7 @@ void Sample::initRenderer(int typesort)
     m_resources->m_clipping        = m_tweak.useClipping;
     m_resources->m_extraAttributes = m_modelConfig.extraAttributes;
 #if IS_VULKAN
-    m_resources->m_subgroupSize    = m_tweak.subgroupSize;
+    m_resources->m_subgroupSize = m_tweak.subgroupSize;
 #endif
 
 #if IS_OPENGL
@@ -756,12 +764,14 @@ bool Sample::begin()
 
     resetEXTtweaks(false);
   }
-  else {
+  else
+  {
     if(m_tweak.numTaskMeshlets == ~0)
       m_tweak.numTaskMeshlets = 32;
   }
 
-  m_supportsFragBarycentrics = m_context.hasDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
+  m_supportsFragBarycentrics = m_context.hasDeviceExtension(VK_NV_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME)
+                               || m_context.hasDeviceExtension(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
 
 #endif
 
@@ -851,9 +861,9 @@ bool Sample::begin()
 #if IS_VULKAN
     if(m_supportsSubgroupControl)
     {
-      for(int subgroupSize  = m_subgroupSizeProperties.minSubgroupSize;
-              subgroupSize <= m_subgroupSizeProperties.maxSubgroupSize;
-              subgroupSize *= 2) {
+      for(int subgroupSize = m_subgroupSizeProperties.minSubgroupSize;
+          subgroupSize <= m_subgroupSizeProperties.maxSubgroupSize; subgroupSize *= 2)
+      {
         m_ui.enumAdd(GUI_SUBGROUP_SIZE, subgroupSize, std::to_string(subgroupSize).c_str());
       }
     }

@@ -35,7 +35,13 @@
 
 
 #if USE_BARYCENTRIC_SHADING
-  #extension GL_NV_fragment_shader_barycentric : require
+  #if USE_BARYCENTRIC_SHADING_EXT
+    #extension GL_EXT_fragment_shader_barycentric : require
+  #else
+    #extension GL_NV_fragment_shader_barycentric : require
+    #define pervertexEXT    pervertexNV
+    #define gl_BaryCoordEXT gl_BaryCoordNV
+  #endif
 #endif
 
 #include "common.h"
@@ -103,7 +109,7 @@
     flat uint meshletID;
   } IN;
   
-  layout(location=1) pervertexNV in ManualInterpolants {
+  layout(location=1) pervertexEXT in ManualInterpolants {
     uint vidx;
   } INBary[3];
 
@@ -163,10 +169,10 @@ void main()
   
 #elif USE_BARYCENTRIC_SHADING
 
-  vec3 oPos = getPosition(INBary[0].vidx) * gl_BaryCoordNV.x + getPosition(INBary[1].vidx) * gl_BaryCoordNV.y + getPosition(INBary[2].vidx) * gl_BaryCoordNV.z;
+  vec3 oPos = getPosition(INBary[0].vidx) * gl_BaryCoordEXT.x + getPosition(INBary[1].vidx) * gl_BaryCoordEXT.y + getPosition(INBary[2].vidx) * gl_BaryCoordEXT.z;
   vec3 wPos = (mat4(object.worldMatrix) * vec4(oPos,1)).xyz;
   
-  vec3 oNormal = getNormal(INBary[0].vidx) * gl_BaryCoordNV.x + getNormal(INBary[1].vidx) * gl_BaryCoordNV.y + getNormal(INBary[2].vidx) * gl_BaryCoordNV.z;
+  vec3 oNormal = getNormal(INBary[0].vidx) * gl_BaryCoordEXT.x + getNormal(INBary[1].vidx) * gl_BaryCoordEXT.y + getNormal(INBary[2].vidx) * gl_BaryCoordEXT.z;
   vec3 wNormal  = mat3(object.worldMatrixIT) * oNormal;
 
   vec4 color = shading(wPos, wNormal, 0);
@@ -174,7 +180,7 @@ void main()
   {
     UNROLL_LOOP
     for (int i = 0; i < VERTEX_EXTRAS_COUNT; i++){
-      vec4 xtra = getExtra(INBary[0].vidx, i) * gl_BaryCoordNV.x + getExtra(INBary[1].vidx, i) * gl_BaryCoordNV.y + getExtra(INBary[2].vidx, i) * gl_BaryCoordNV.z;
+      vec4 xtra = getExtra(INBary[0].vidx, i) * gl_BaryCoordEXT.x + getExtra(INBary[1].vidx, i) * gl_BaryCoordEXT.y + getExtra(INBary[2].vidx, i) * gl_BaryCoordEXT.z;
       color += xtra;
     }
   }
