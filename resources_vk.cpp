@@ -76,6 +76,46 @@ void ResourcesVK::endFrame()
   m_withinFrame = false;
 }
 
+VkRenderPass ResourcesVK::s_passUI = VK_NULL_HANDLE;
+void         ResourcesVK::initImGui(const nvvk::Context& context)
+{
+  assert(!s_passUI);
+
+  // Create the ui render pass
+  VkAttachmentDescription attachments[1] = {};
+  attachments[0].format                  = VK_FORMAT_R8G8B8A8_UNORM;
+  attachments[0].samples                 = VK_SAMPLE_COUNT_1_BIT;
+  attachments[0].loadOp                  = VK_ATTACHMENT_LOAD_OP_LOAD;
+  attachments[0].storeOp                 = VK_ATTACHMENT_STORE_OP_STORE;
+  attachments[0].initialLayout           = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  attachments[0].finalLayout             = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;  // for blit operation
+  attachments[0].flags                   = 0;
+
+  VkSubpassDescription subpass       = {};
+  subpass.pipelineBindPoint          = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  subpass.inputAttachmentCount       = 0;
+  VkAttachmentReference colorRefs[1] = {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
+  subpass.colorAttachmentCount       = NV_ARRAY_SIZE(colorRefs);
+  subpass.pColorAttachments          = colorRefs;
+  subpass.pDepthStencilAttachment    = nullptr;
+  VkRenderPassCreateInfo rpInfo      = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+  rpInfo.attachmentCount             = NV_ARRAY_SIZE(attachments);
+  rpInfo.pAttachments                = attachments;
+  rpInfo.subpassCount                = 1;
+  rpInfo.pSubpasses                  = &subpass;
+  rpInfo.dependencyCount             = 0;
+
+  VkResult result = vkCreateRenderPass(context.m_device, &rpInfo, NULL, &s_passUI);
+  assert(result == VK_SUCCESS);
+
+  ImGui::InitVK(context.m_device, context.m_physicalDevice, context.m_queueGCT, context.m_queueGCT.familyIndex, s_passUI);
+}
+void ResourcesVK::deinitImGui(const nvvk::Context& context)
+{
+  vkDestroyRenderPass(context.m_device, s_passUI, nullptr);
+  ImGui::ShutdownVK();
+}
+
 void ResourcesVK::blitFrame(const FrameConfig& global)
 {
   VkCommandBuffer cmd = createTempCmdBuffer();
@@ -115,8 +155,14 @@ void ResourcesVK::blitFrame(const FrameConfig& global)
 
   if(global.imguiDrawData)
   {
+    if(imageBlitRead != m_framebuffer.imgColor)
+    {
+      cmdImageTransition(cmd, imageBlitRead, VK_IMAGE_ASPECT_COLOR_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    }
+
     VkRenderPassBeginInfo renderPassBeginInfo    = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    renderPassBeginInfo.renderPass               = m_framebuffer.passUI;
+    renderPassBeginInfo.renderPass               = s_passUI;
     renderPassBeginInfo.framebuffer              = m_framebuffer.fboUI;
     renderPassBeginInfo.renderArea.offset.x      = 0;
     renderPassBeginInfo.renderArea.offset.y      = 0;
@@ -238,7 +284,6 @@ bool ResourcesVK::init(const nvvk::Context* context, const nvvk::SwapChain* swap
   {
     m_framebuffer.passClear    = createPass(true, m_framebuffer.msaa);
     m_framebuffer.passPreserve = createPass(false, m_framebuffer.msaa);
-    m_framebuffer.passUI       = createPassUI(m_framebuffer.msaa);
   }
 
   // device mem allocator
@@ -262,11 +307,6 @@ bool ResourcesVK::init(const nvvk::Context* context, const nvvk::SwapChain* swap
 
   {
     initPipeLayouts();
-  }
-
-  {
-    ImGui::InitVK(m_context->m_device, m_context->m_physicalDevice, m_context->m_queueGCT,
-                  m_context->m_queueGCT.familyIndex, m_framebuffer.passUI);
   }
 
   return true;
@@ -373,8 +413,6 @@ void ResourcesVK::deinit()
 {
   synchronize();
 
-  ImGui::ShutdownVK();
-
   {
     vkDestroyBuffer(m_device, m_common.viewBuffer, nullptr);
     m_memAllocator.free(m_common.viewAID);
@@ -397,7 +435,6 @@ void ResourcesVK::deinit()
 
   vkDestroyRenderPass(m_device, m_framebuffer.passClear, nullptr);
   vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, nullptr);
-  vkDestroyRenderPass(m_device, m_framebuffer.passUI, nullptr);
 
   m_setupStandard.container.deinitLayouts();
   m_setupBbox.container.deinitLayouts();
@@ -554,48 +591,6 @@ VkRenderPass ResourcesVK::createPass(bool clear, int msaa) const
   return rp;
 }
 
-
-VkRenderPass ResourcesVK::createPassUI(int msaa) const
-{
-  (void)msaa;
-  // ui related
-  // two cases:
-  // if msaa we want to render into scene_color_resolved, which was DST_OPTIMAL
-  // otherwise render into scene_color, which was VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-  VkImageLayout uiTargetLayout =
-      m_framebuffer.useResolved ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-  // Create the ui render pass
-  VkAttachmentDescription attachments[1] = {};
-  attachments[0].format                  = VK_FORMAT_R8G8B8A8_UNORM;
-  attachments[0].samples                 = VK_SAMPLE_COUNT_1_BIT;
-  attachments[0].loadOp                  = VK_ATTACHMENT_LOAD_OP_LOAD;
-  attachments[0].storeOp                 = VK_ATTACHMENT_STORE_OP_STORE;
-  attachments[0].initialLayout           = uiTargetLayout;
-  attachments[0].finalLayout             = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;  // for blit operation
-  attachments[0].flags                   = 0;
-
-  VkSubpassDescription subpass       = {};
-  subpass.pipelineBindPoint          = VK_PIPELINE_BIND_POINT_GRAPHICS;
-  subpass.inputAttachmentCount       = 0;
-  VkAttachmentReference colorRefs[1] = {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
-  subpass.colorAttachmentCount       = NV_ARRAY_SIZE(colorRefs);
-  subpass.pColorAttachments          = colorRefs;
-  subpass.pDepthStencilAttachment    = nullptr;
-  VkRenderPassCreateInfo rpInfo      = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-  rpInfo.attachmentCount             = NV_ARRAY_SIZE(attachments);
-  rpInfo.pAttachments                = attachments;
-  rpInfo.subpassCount                = 1;
-  rpInfo.pSubpasses                  = &subpass;
-  rpInfo.dependencyCount             = 0;
-
-  VkRenderPass rp;
-  VkResult     result = vkCreateRenderPass(m_device, &rpInfo, nullptr, &rp);
-  assert(result == VK_SUCCESS);
-  return rp;
-}
-
-
 bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, bool vsync)
 {
   VkResult result;
@@ -626,12 +621,10 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
   {
     vkDestroyRenderPass(m_device, m_framebuffer.passClear, nullptr);
     vkDestroyRenderPass(m_device, m_framebuffer.passPreserve, nullptr);
-    vkDestroyRenderPass(m_device, m_framebuffer.passUI, nullptr);
 
     // recreate the render passes with new msaa setting
     m_framebuffer.passClear    = createPass(true, m_framebuffer.msaa);
     m_framebuffer.passPreserve = createPass(false, m_framebuffer.msaa);
-    m_framebuffer.passUI       = createPassUI(m_framebuffer.msaa);
   }
 
   VkSampleCountFlagBits samplesUsed = getSampleCountFlagBits(m_framebuffer.msaa);
@@ -811,7 +804,7 @@ bool ResourcesVK::initFramebuffer(int winWidth, int winHeight, int supersample, 
     fbInfo.height                  = winHeight;
     fbInfo.layers                  = 1;
 
-    fbInfo.renderPass = m_framebuffer.passUI;
+    fbInfo.renderPass = s_passUI;
     result            = vkCreateFramebuffer(m_device, &fbInfo, nullptr, &fb);
     assert(result == VK_SUCCESS);
     m_framebuffer.fboUI = fb;

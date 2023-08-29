@@ -29,6 +29,7 @@
 #include <nvgl/error_gl.hpp>
 #include <nvgl/extensions_gl.hpp>
 #include <nvgl/glsltypes_gl.hpp>
+#include <imgui/backends/imgui_impl_gl.h>
 
 #define EXE_NAME "gl_meshlet_cadscene"
 
@@ -36,6 +37,7 @@
 #include "vk_ext_mesh_shader.h"
 #include <nvvk/appwindowprofiler_vk.hpp>
 #include <nvvk/context_vk.hpp>
+#include "resources_vk.hpp"
 
 #define EXE_NAME "vk_meshlet_cadscene"
 #endif
@@ -879,6 +881,12 @@ bool Sample::begin()
               && initScene(m_modelFilename.c_str(), m_tweak.copies - 1,
                            (m_tweak.cloneaxisX << 0) | (m_tweak.cloneaxisY << 1) | (m_tweak.cloneaxisZ << 2));
 
+#if IS_OPENGL
+  ImGui::InitGL();
+#elif IS_VULKAN
+  ResourcesVK::initImGui(m_context);
+#endif
+
   postSceneLoad();
 
   initRenderer(m_tweak.renderer);
@@ -898,6 +906,12 @@ void Sample::end()
   {
     m_resources->deinit();
   }
+
+#if IS_OPENGL
+  ImGui::ShutdownGL();
+#elif IS_VULKAN
+  ResourcesVK::deinitImGui(m_context);
+#endif
 }
 
 void Sample::processUI(int width, int height, double time)

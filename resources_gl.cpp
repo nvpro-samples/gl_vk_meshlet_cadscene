@@ -76,8 +76,6 @@ void ResourcesGL::deinit()
   m_common.viewBuffer.destroy();
   m_common.statsBuffer.destroy();
   m_common.statsReadBuffer.destroy();
-
-  ImGui::ShutdownGL();
 }
 
 void ResourcesGL::deinitScene()
@@ -202,8 +200,6 @@ bool ResourcesGL::init(const nvgl::ContextWindow* contextWindowGL, nvh::Profiler
 
   glGenVertexArrays(1, &m_common.standardVao);
   glBindVertexArray(m_common.standardVao);
-
-  ImGui::InitGL();
 
   GLint uboAlignment;
   glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &uboAlignment);
