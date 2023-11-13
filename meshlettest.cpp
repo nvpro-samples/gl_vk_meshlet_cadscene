@@ -180,33 +180,34 @@ class Sample
 public:
   struct Tweak
   {
-    DemoScene demoScene           = DEMOSCENE_WORLDCAR;
-    bool      usePrimitiveCull    = false;
-    bool      useVertexCull       = true;
-    bool      useFragBarycentrics = false;
-    bool      useBackFaceCull     = true;
-    bool      useClipping         = false;
-    bool      animate             = false;
-    bool      colorize            = false;
-    bool      showBboxes          = false;
-    bool      showNormals         = false;
-    bool      showCulled          = false;
-    bool      useStats            = false;
-    bool      showPrimIDs         = false;
-    float     fov                 = 45.0f;
-    float     pixelCull           = 0.5f;
-    int       renderer            = 0;
-    int       viewPoint           = 0;
-    int       supersample         = 2;
-    int       copies              = 1;
-    int       cloneaxisX          = 1;
-    int       cloneaxisY          = 1;
-    int       cloneaxisZ          = 0;
-    uint32_t  objectFrom          = 0;
-    uint32_t  objectNum           = ~0;
-    uint32_t  maxGroups           = -1;
-    int32_t   indexThreshold      = 0;
-    uint32_t  minTaskMeshlets     = 16;
+    DemoScene demoScene               = DEMOSCENE_WORLDCAR;
+    bool      usePrimitiveCull        = false;
+    bool      useVertexCull           = true;
+    bool      useFragBarycentrics     = false;
+    bool      useFragBarycentricQuads = false;
+    bool      useBackFaceCull         = true;
+    bool      useClipping             = false;
+    bool      animate                 = false;
+    bool      colorize                = false;
+    bool      showBboxes              = false;
+    bool      showNormals             = false;
+    bool      showCulled              = false;
+    bool      useStats                = false;
+    bool      showPrimIDs             = false;
+    float     fov                     = 45.0f;
+    float     pixelCull               = 0.5f;
+    int       renderer                = 0;
+    int       viewPoint               = 0;
+    int       supersample             = 2;
+    int       copies                  = 1;
+    int       cloneaxisX              = 1;
+    int       cloneaxisY              = 1;
+    int       cloneaxisZ              = 0;
+    uint32_t  objectFrom              = 0;
+    uint32_t  objectNum               = ~0;
+    uint32_t  maxGroups               = -1;
+    int32_t   indexThreshold          = 0;
+    uint32_t  minTaskMeshlets         = 16;
 
     vec3f clipPosition = vec3f(0.5f);
 #if IS_VULKAN
@@ -459,6 +460,8 @@ std::string Sample::getShaderPrepend() const
              + nvh::stringFormat("#define USE_VERTEX_CULL %d\n", m_tweak.useVertexCull ? 1 : 0)
              + nvh::stringFormat("#define USE_BARYCENTRIC_SHADING %d\n",
                                  m_tweak.useFragBarycentrics && m_supportsFragBarycentrics ? 1 : 0)
+             + nvh::stringFormat("#define USE_BARYCENTRIC_SHADING_QUADSHUFFLE %d\n",
+                                 m_tweak.useFragBarycentricQuads ? 1 : 0)
              + nvh::stringFormat("#define USE_BACKFACECULL %d\n", m_tweak.useBackFaceCull ? 1 : 0)
              + nvh::stringFormat("#define USE_CLIPPING %d\n", m_tweak.useClipping ? 1 : 0)
              + nvh::stringFormat("#define USE_STATS %d\n", m_tweak.useStats ? 1 : 0)
@@ -956,6 +959,7 @@ void Sample::processUI(int width, int height, double time)
       if(m_supportsFragBarycentrics)
       {
         ImGui::Checkbox("use fragment barycentrics", &m_tweak.useFragBarycentrics);
+        ImGui::Checkbox("- with quad shuffle", &m_tweak.useFragBarycentricQuads);
       }
     }
 #if IS_VULKAN
@@ -1115,7 +1119,7 @@ void Sample::think(double time)
   if(m_windowState.onPress(KEY_R) || tweakChanged(m_tweak.useBackFaceCull) || tweakChanged(m_tweak.useClipping)
      || tweakChanged(m_tweak.useStats) || tweakChanged(m_tweak.showBboxes) || tweakChanged(m_tweak.showNormals)
      || tweakChanged(m_tweak.showCulled) || tweakChanged(m_tweak.showPrimIDs) || tweakChanged(m_tweak.numTaskMeshlets)
-     || tweakChanged(m_tweak.useFragBarycentrics) || tweakChanged(m_tweak.useVertexCull)
+     || tweakChanged(m_tweak.useFragBarycentrics) || tweakChanged(m_tweak.useFragBarycentricQuads) || tweakChanged(m_tweak.useVertexCull)
 #if IS_VULKAN
      || tweakChanged(m_tweak.extMeshWorkGroupInvocations) || tweakChanged(m_tweak.extTaskWorkGroupInvocations)
      || tweakChanged(m_tweak.extCompactPrimitiveOutput) || tweakChanged(m_tweak.extCompactVertexOutput)
@@ -1390,6 +1394,7 @@ void Sample::setupConfigParameters()
   m_parameterList.add("showculled", &m_tweak.showCulled);
 
   m_parameterList.add("fragbarycentrics", &m_tweak.useFragBarycentrics);
+  m_parameterList.add("fragbarycentricquads", &m_tweak.useFragBarycentricQuads);
 
   m_parameterList.add("primids", &m_tweak.showPrimIDs);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2016-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2022 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2023 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -25,6 +25,11 @@
   #define UNROLL_LOOP [[unroll]]
 
 #if USE_BARYCENTRIC_SHADING
+  #if USE_BARYCENTRIC_SHADING_QUADSHUFFLE
+    #extension GL_KHR_shader_subgroup_basic : require
+    #extension GL_KHR_shader_subgroup_quad  : require
+  #endif
+
   #if USE_BARYCENTRIC_SHADING_EXT
     #extension GL_EXT_fragment_shader_barycentric : require
   #else
@@ -136,10 +141,84 @@ void main()
   
 #elif USE_BARYCENTRIC_SHADING
 
-  vec3 oPos = getPosition(INBary[0].vidx) * gl_BaryCoordEXT.x + getPosition(INBary[1].vidx) * gl_BaryCoordEXT.y + getPosition(INBary[2].vidx) * gl_BaryCoordEXT.z;
+  // With barycentric shading we move per-vertex work into the
+  // fragment shader. We use the builtin gl_BaryCoordEXT to interpolate
+  // the per-vertex values for fragment shading.
+  //
+  // One motivation for doing this in a scenario with lots of tiny
+  // triangles on screen is that the pre-raster stages (vertex or mesh shaders) 
+  // can become occupancy limited by their per-vertex outputs. These outputs
+  // become less utilized if the majority of triangles are not rastered (too small etc.).
+  // We essentially waste computing vertices not visible, and because
+  // hw had to pre-allocate them, we reduced occupancy of those
+  // vertex and mesh shader warps the more vertex attributes we pass to
+  // fragment shader.
+
+
+#if USE_BARYCENTRIC_SHADING_QUADSHUFFLE
+
+  // One downside of doing per-vertex work in the fragment shader is that
+  // (like in raytracing) we have to do all the per-vertex work in just
+  // one fragment shader thread, trippling the work.
+  // However, as we actually shade in quads, we can distribute each of the
+  // three vertices for the incoming triangle within the quad into a separate thread, 
+  // and as result regain some thread effiency.
+  //
+  // This sample's per-vertex work is too simple to really show much of a benefit.
+  // You have to increase the "extra vertex attributes" in the UI quite some.
+  //
+  // However, in case your data ends up being rendered as tiny triangles and your code 
+  // does some more complex per-vertex work, then this technique can help overall 
+  // performance.
+  
+  uint quadIndex  = gl_SubgroupInvocationID & 3;
+  uint vidx       = INBary[min(quadIndex,3)].vidx;
+  
+
+  vec3 oPos = getPosition(vidx);
   vec3 wPos = (mat4(object.worldMatrix) * vec4(oPos,1)).xyz;
   
-  vec3 oNormal = getNormal(INBary[0].vidx) * gl_BaryCoordEXT.x + getNormal(INBary[1].vidx) * gl_BaryCoordEXT.y + getNormal(INBary[2].vidx) * gl_BaryCoordEXT.z;
+  vec3 oNormal = getNormal(vidx);
+  vec3 wNormal  = mat3(object.worldMatrixIT) * oNormal;
+  
+  wPos = subgroupQuadBroadcast(wPos, 0) * gl_BaryCoordEXT.x +
+         subgroupQuadBroadcast(wPos, 1) * gl_BaryCoordEXT.y +
+         subgroupQuadBroadcast(wPos, 2) * gl_BaryCoordEXT.z;
+         
+  wNormal = subgroupQuadBroadcast(wNormal, 0) * gl_BaryCoordEXT.x +
+            subgroupQuadBroadcast(wNormal, 1) * gl_BaryCoordEXT.y +
+            subgroupQuadBroadcast(wNormal, 2) * gl_BaryCoordEXT.z;
+
+  vec4 color = shading(wPos, wNormal, 0);
+  #if VERTEX_EXTRAS_COUNT
+  {
+    vec4 xtra = vec4(0);
+    UNROLL_LOOP
+    for (int i = 0; i < VERTEX_EXTRAS_COUNT; i++){
+      xtra += getExtra(vidx, i);
+    }
+    
+    xtra = subgroupQuadBroadcast(xtra, 0) * gl_BaryCoordEXT.x +
+           subgroupQuadBroadcast(xtra, 1) * gl_BaryCoordEXT.y +
+           subgroupQuadBroadcast(xtra, 2) * gl_BaryCoordEXT.z;
+    
+    color += xtra;
+  }
+  #endif
+  out_Color = color;
+  
+#else
+
+  // without quad shuffle, we do each per-vertex work in the same thread
+
+  vec3 oPos = getPosition(INBary[0].vidx) * gl_BaryCoordEXT.x 
+            + getPosition(INBary[1].vidx) * gl_BaryCoordEXT.y 
+            + getPosition(INBary[2].vidx) * gl_BaryCoordEXT.z;
+  vec3 wPos = (mat4(object.worldMatrix) * vec4(oPos,1)).xyz;
+  
+  vec3 oNormal = getNormal(INBary[0].vidx) * gl_BaryCoordEXT.x 
+               + getNormal(INBary[1].vidx) * gl_BaryCoordEXT.y 
+               + getNormal(INBary[2].vidx) * gl_BaryCoordEXT.z;
   vec3 wNormal  = mat3(object.worldMatrixIT) * oNormal;
 
   vec4 color = shading(wPos, wNormal, 0);
@@ -147,14 +226,21 @@ void main()
   {
     UNROLL_LOOP
     for (int i = 0; i < VERTEX_EXTRAS_COUNT; i++){
-      vec4 xtra = getExtra(INBary[0].vidx, i) * gl_BaryCoordEXT.x + getExtra(INBary[1].vidx, i) * gl_BaryCoordEXT.y + getExtra(INBary[2].vidx, i) * gl_BaryCoordEXT.z;
+      vec4 xtra = getExtra(INBary[0].vidx, i) * gl_BaryCoordEXT.x 
+                + getExtra(INBary[1].vidx, i) * gl_BaryCoordEXT.y 
+                + getExtra(INBary[2].vidx, i) * gl_BaryCoordEXT.z;
       color += xtra;
     }
   }
   #endif
   out_Color = color;
+
+#endif
   
 #else
+  
+  // In the traditional way, without fragment shader barycentrics,
+  // interpolated values are used directly
 
   vec4 color = shading(IN.wPos, IN.wNormal, IN.meshletID);
   #if VERTEX_EXTRAS_COUNT

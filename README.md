@@ -375,7 +375,9 @@ Some combinations of shaderc and NVIDIA driver versions cause the application to
 
 # History
 
-Major releases
+Major feature releases
+- November 2023
+  - added `USE_BARYCENTRIC_SHADING_QUADSHUFFLE` to fragment shaders.
 - September 2022
   - add `VK_EXT_mesh_shader` support and new renderers
   - add link / info about procedural geometry and mesh shaders
