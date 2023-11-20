@@ -102,7 +102,7 @@ public:
 
   virtual void getStats(CullStats& stats) {}
 
-  [[nodiscard]] virtual nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const = 0;
+  [[nodiscard]] virtual glm::mat4 perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const = 0;
 
   inline void initAlignedSizes(unsigned int uboAlignment)
   {

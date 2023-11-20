@@ -26,6 +26,8 @@
 #include "nvmeshlet_builder.hpp"
 #include <imgui/backends/imgui_impl_gl.h>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 namespace meshlettest {
 
 bool ResourcesGL::initFramebuffer(int width, int height, int supersample, bool vsync)
@@ -238,9 +240,9 @@ void ResourcesGL::blitFrame(const FrameConfig& global)
   }
 }
 
-nvmath::mat4f ResourcesGL::perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const
+glm::mat4 ResourcesGL::perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const
 {
-  return nvmath::perspective(fovy, aspect, nearPlane, farPlane);
+  return glm::perspective(glm::radians(fovy), aspect, nearPlane, farPlane);
 }
 
 void ResourcesGL::getStats(CullStats& stats)
@@ -265,10 +267,10 @@ void ResourcesGL::drawBoundingBoxes(const class RenderList* NV_RESTRICT list) co
   glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   glLineWidth(m_framebuffer.supersample);
   {
-    int  lastMaterial = -1;
-    int  lastGeometry = -1;
-    int  lastMatrix   = -1;
-    int  lastChunk    = -1;
+    int lastMaterial = -1;
+    int lastGeometry = -1;
+    int lastMatrix   = -1;
+    int lastChunk    = -1;
 
     for(int i = 0; i < list->m_drawItems.size(); i++)
     {
@@ -284,7 +286,7 @@ void ResourcesGL::drawBoundingBoxes(const class RenderList* NV_RESTRICT list) co
           glBindBufferRange(GL_UNIFORM_BUFFER, UBO_GEOMETRY, m_setup.geometryBindings.buffer,
                             sizeof(CadSceneGL::GeometryUbo) * chunk, sizeof(CadSceneGL::GeometryUbo));
 
-          lastChunk  = chunk;
+          lastChunk = chunk;
         }
 
         glUniform4ui(0, uint32_t(geogl.topoMeshlet.offset / sizeof(NVMeshlet::MeshletDesc)), 0, 0, 0);

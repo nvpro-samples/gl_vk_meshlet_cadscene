@@ -49,6 +49,8 @@
 #include <nvh/misc.hpp>
 
 #include "renderer.hpp"
+#include <glm/gtc/type_ptr.hpp>
+#include "glm/gtc/matrix_access.hpp"
 
 
 namespace meshlettest {
@@ -209,7 +211,7 @@ public:
     int32_t   indexThreshold          = 0;
     uint32_t  minTaskMeshlets         = 16;
 
-    vec3f clipPosition = vec3f(0.5f);
+    glm::vec3 clipPosition = glm::vec3(0.5f);
 #if IS_VULKAN
     bool     extLocalInvocationVertexOutput    = false;
     bool     extLocalInvocationPrimitiveOutput = false;
@@ -227,9 +229,9 @@ public:
 
   struct ViewPoint
   {
-    std::string   name;
-    nvmath::mat4f mat;
-    float         sceneScale{};
+    std::string name;
+    glm::mat4   mat;
+    float       sceneScale{};
   };
 
   bool             m_useUI = true;
@@ -262,7 +264,7 @@ public:
 
   std::string          m_messageString;
   std::string          m_modelFilename;
-  vec3f                m_modelUpVector = vec3f(0, 1, 0);
+  glm::vec3            m_modelUpVector = {0.f, 1.f, 0.f};
   CadScene::LoadConfig m_modelConfig;
   CadScene::LoadConfig m_lastModelConfig;
 
@@ -660,7 +662,7 @@ void Sample::loadViewpoints()
       // read matrix
       for(auto i = 0; i < 16; ++i)
       {
-        bool valueIsFloat = line.parameter[1 + i].toFloat(vp.mat.mat_array[i]);
+        bool valueIsFloat = line.parameter[1 + i].toFloat(glm::value_ptr(vp.mat)[i]);
 
         lineIsOK = lineIsOK & valueIsFloat;
       }
@@ -700,10 +702,10 @@ void Sample::postSceneLoad()
 
   m_control                  = nvh::CameraControl();
   m_control.m_sceneUp        = m_modelUpVector;
-  m_control.m_sceneOrbit     = nvmath::vec3f(m_scene.m_bbox.max + m_scene.m_bbox.min) * 0.5f;
-  m_control.m_sceneDimension = nvmath::length((m_scene.m_bbox.max - m_scene.m_bbox.min));
-  m_control.m_viewMatrix = nvmath::look_at(m_control.m_sceneOrbit - (-vec3(1, 1, 1) * m_control.m_sceneDimension * 0.5f),
-                                           m_control.m_sceneOrbit, m_modelUpVector);
+  m_control.m_sceneOrbit     = glm::vec3(m_scene.m_bbox.max + m_scene.m_bbox.min) * 0.5f;
+  m_control.m_sceneDimension = glm::length((m_scene.m_bbox.max - m_scene.m_bbox.min));
+  m_control.m_viewMatrix = glm::lookAt(m_control.m_sceneOrbit - (-glm::vec3(1.f, 1.f, 1.f) * m_control.m_sceneDimension * 0.5f),
+                                       m_control.m_sceneOrbit, m_modelUpVector);
 
   m_frameConfig.sceneUbo.wLightPos   = (m_scene.m_bbox.max + m_scene.m_bbox.min) * 0.5f + m_control.m_sceneDimension;
   m_frameConfig.sceneUbo.wLightPos.w = 1.0;
@@ -996,7 +998,7 @@ void Sample::processUI(int width, int height, double time)
       ImGui::NewLine();
       ImGui::Checkbox("use backface culling ", &m_tweak.useBackFaceCull);
       ImGui::Checkbox("use clipping planes", &m_tweak.useClipping);
-      ImGui::SliderFloat3("clip position", m_tweak.clipPosition.vec_array, 0.01f, 1.01, "%.2f");
+      ImGui::SliderFloat3("clip position", glm::value_ptr(m_tweak.clipPosition), 0.01f, 1.01, "%.2f");
 
 #if 0
       ImGui::Separator();
@@ -1104,8 +1106,8 @@ void Sample::think(double time)
     processUI(width, height, time);
   }
 
-  m_control.processActions(m_windowState.m_winSize,
-                           nvmath::vec2f(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]),
+  m_control.processActions({m_windowState.m_winSize[0], m_windowState.m_winSize[1]},
+                           glm::vec2(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]),
                            m_windowState.m_mouseButtonFlags, m_windowState.m_mouseWheel);
 
   bool modelChanged = false;
@@ -1203,42 +1205,42 @@ void Sample::think(double time)
 
     if(m_tweak.animate)
     {
-      float         t        = float(time);
-      nvmath::quatf quat     = nvmath::axis_to_quat(m_modelUpVector, t * 0.5f);
-      mat3          rotator  = nvmath::quat_2_mat(quat);
-      vec3          dir      = rotator * (-vec3(1, 1, 1));
-      float         distance = 0.4f + sinf(t) * 0.2f;
-      m_control.m_viewMatrix = nvmath::look_at(m_control.m_sceneOrbit - (dir * m_control.m_sceneDimension * distance),
-                                               m_control.m_sceneOrbit, m_modelUpVector);
+      float     t            = float(time);
+      glm::quat quat         = glm::angleAxis(t * 0.5f, m_modelUpVector);
+      mat3      rotator      = glm::mat3_cast(quat);
+      vec3      dir          = rotator * (-vec3(1, 1, 1));
+      float     distance     = 0.4f + sinf(t) * 0.2f;
+      m_control.m_viewMatrix = glm::lookAt(m_control.m_sceneOrbit - (dir * m_control.m_sceneDimension * distance),
+                                           m_control.m_sceneOrbit, m_modelUpVector);
     }
 
-    nvmath::mat4 projection =
+    glm::mat4 projection =
         m_resources->perspectiveProjection(m_tweak.fov, float(width) / float(height),
                                            m_control.m_sceneDimension * 0.001f, m_control.m_sceneDimension * 10.0f);
-    nvmath::mat4 view  = m_control.m_viewMatrix;
-    nvmath::mat4 viewI = nvmath::invert(view);
+    glm::mat4 view  = m_control.m_viewMatrix;
+    glm::mat4 viewI = glm::inverse(view);
 
     sceneUbo.viewProjMatrix = projection * view;
     sceneUbo.viewMatrix     = view;
-    sceneUbo.viewMatrixIT   = nvmath::transpose(viewI);
+    sceneUbo.viewMatrixIT   = glm::transpose(viewI);
 
-    sceneUbo.viewPos = sceneUbo.viewMatrixIT.row(3);
-    sceneUbo.viewDir = -view.row(2);
+    sceneUbo.viewPos = glm::row(sceneUbo.viewMatrixIT, 3);
+    sceneUbo.viewDir = -glm::row(view, 2);
 
-    sceneUbo.wLightPos   = sceneUbo.viewMatrixIT.row(3);
+    sceneUbo.wLightPos   = glm::row(sceneUbo.viewMatrixIT, 3);
     sceneUbo.wLightPos.w = 1.0;
 
-    nvmath::vec3 viewDir   = nvmath::vec3(view.row(2));
-    nvmath::vec3 sideDir   = nvmath::vec3(-view.row(0));
-    nvmath::vec3 sideUpDir = nvmath::vec3(view.row(1));
-    sceneUbo.wLightPos += nvmath::vec4((sideDir + sideUpDir + viewDir * 0.25f) * m_control.m_sceneDimension * 0.25f, 0.0f);
+    glm::vec3 viewDir   = glm::vec3(glm::row(view, 2));
+    glm::vec3 sideDir   = glm::vec3(-glm::row(view, 0));
+    glm::vec3 sideUpDir = glm::vec3(glm::row(view, 1));
+    sceneUbo.wLightPos += glm::vec4((sideDir + sideUpDir + viewDir * 0.25f) * m_control.m_sceneDimension * 0.25f, 0.0f);
 
     sceneUbo.wClipPlanes[0] =
-        vec4f(-1, 0, 0, nvmath::lerp(m_tweak.clipPosition.x, m_scene.m_bboxInstanced.min.x, m_scene.m_bboxInstanced.max.x));
+        glm::vec4(-1, 0, 0, glm::lerp(m_tweak.clipPosition.x, m_scene.m_bboxInstanced.min.x, m_scene.m_bboxInstanced.max.x));
     sceneUbo.wClipPlanes[1] =
-        vec4f(0, -1, 0, nvmath::lerp(m_tweak.clipPosition.y, m_scene.m_bboxInstanced.min.y, m_scene.m_bboxInstanced.max.y));
+        glm::vec4(0, -1, 0, glm::lerp(m_tweak.clipPosition.y, m_scene.m_bboxInstanced.min.y, m_scene.m_bboxInstanced.max.y));
     sceneUbo.wClipPlanes[2] =
-        vec4f(0, 0, -1, nvmath::lerp(m_tweak.clipPosition.z, m_scene.m_bboxInstanced.min.z, m_scene.m_bboxInstanced.max.z));
+        glm::vec4(0, 0, -1, glm::lerp(m_tweak.clipPosition.z, m_scene.m_bboxInstanced.min.z, m_scene.m_bboxInstanced.max.z));
   }
 
 
@@ -1301,9 +1303,10 @@ void Sample::saveViewpoint()
   if(f)
   {
     f << vp.name << " ";
-    for(float i : vp.mat.mat_array)
+    float* mat_array = glm::value_ptr(vp.mat);
+    for(int i = 0; i < 16; i++)
     {
-      f << i << " ";
+      f << mat_array[i] << " ";
     }
     f << vp.sceneScale;
     f << "\n";
@@ -1401,7 +1404,7 @@ void Sample::setupConfigParameters()
   m_parameterList.add("stats", &m_tweak.useStats);
 
   m_parameterList.add("clipping", &m_tweak.useClipping);
-  m_parameterList.add("clippos", m_tweak.clipPosition.vec_array, nullptr, 3);
+  m_parameterList.add("clippos", glm::value_ptr(m_tweak.clipPosition), nullptr, 3);
 
   m_parameterList.add("message", &m_messageString);
 

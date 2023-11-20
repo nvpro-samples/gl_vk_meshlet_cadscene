@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <cassert>
 #include <platform.h>
+#include <glm/gtc/type_ptr.hpp>
 
 NV_INLINE half floatToHalf(float fval)
 {
@@ -56,14 +57,14 @@ NV_INLINE half floatToHalf(float fval)
   }
 }
 
-NV_INLINE void floatToHalfVector(half output[3], const nvmath::vec3f& input)
+NV_INLINE void floatToHalfVector(half output[3], const glm::vec3& input)
 {
   output[0] = floatToHalf(input[0]);
   output[1] = floatToHalf(input[1]);
   output[2] = floatToHalf(input[2]);
 }
 
-NV_INLINE void floatToHalfVector(half output[4], const nvmath::vec4f& input)
+NV_INLINE void floatToHalfVector(half output[4], const glm::vec4& input)
 {
   output[0] = floatToHalf(input[0]);
   output[1] = floatToHalf(input[1]);
@@ -71,13 +72,13 @@ NV_INLINE void floatToHalfVector(half output[4], const nvmath::vec4f& input)
   output[3] = floatToHalf(input[3]);
 }
 
-nvmath::vec4f randomVector(float from, float to)
+glm::vec4 randomVector(float from, float to)
 {
-  nvmath::vec4f vec;
-  float         width = to - from;
-  for(float& f : vec.vec_array)
+  glm::vec4 vec;
+  float     width = to - from;
+  for(int i = 0; i < 4; i++)
   {
-    f = from + (float(rand()) / float(RAND_MAX)) * width;
+    vec[i] = from + (float(rand()) / float(RAND_MAX)) * width;
   }
   return vec;
 }
@@ -129,7 +130,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     for(auto& side : material.sides)
     {
       side.ambient  = randomVector(0.0f, 0.1f);
-      side.diffuse  = nvmath::vec4f(csf->materials[n].color) + randomVector(0.0f, 0.07f);
+      side.diffuse  = glm::make_vec4(csf->materials[n].color) + randomVector(0.0f, 0.07f);
       side.specular = randomVector(0.25f, 0.55f);
       side.emissive = randomVector(0.0f, 0.05f);
     }
@@ -192,8 +193,8 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
         VertexFP16*           vertex    = (VertexFP16*)getVertex(geom.vboData, i);
         VertexAttributesFP16* attribute = (VertexAttributesFP16*)getVertexAttribute(geom.aboData, i);
 
-        nvmath::vec4f position;
-        nvmath::vec4f normal;
+        glm::vec4 position;
+        glm::vec4 normal;
         position[0] = csfgeom->vertex[3 * i + 0];
         position[1] = csfgeom->vertex[3 * i + 1];
         position[2] = csfgeom->vertex[3 * i + 2];
@@ -208,7 +209,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
         for(uint32_t i = 0; m_cfg.colorizeExtra && i < m_cfg.extraAttributes; i++)
         {
-          floatToHalfVector(attribute[1 + i].normal, nvmath::vec4f(0, 1, 0, 0) * 0.1f);
+          floatToHalfVector(attribute[1 + i].normal, glm::vec4(0, 1, 0, 0) * 0.1f);
         }
 
         m_bboxes[g].merge(position);
@@ -221,8 +222,8 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
         Vertex*           vertex    = (Vertex*)getVertex(geom.vboData, i);
         VertexAttributes* attribute = (VertexAttributes*)getVertexAttribute(geom.aboData, i);
 
-        nvmath::vec4f position;
-        nvmath::vec4f normal;
+        glm::vec4 position;
+        glm::vec4 normal;
         position[0] = csfgeom->vertex[3 * i + 0];
         position[1] = csfgeom->vertex[3 * i + 1];
         position[2] = csfgeom->vertex[3 * i + 2];
@@ -237,7 +238,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
         for(uint32_t i = 0; m_cfg.colorizeExtra && i < m_cfg.extraAttributes; i++)
         {
-          attribute[1 + i].normal = nvmath::vec4f(0, 1, 0, 0) * 0.1f;
+          attribute[1 + i].normal = glm::vec4(0, 1, 0, 0) * 0.1f;
         }
 
         m_bboxes[g].merge(position);
@@ -283,7 +284,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
       {
         uint32_t v = csfgeom->indexSolid[i + accumSolid];
 
-        nvmath::vec4f position;
+        glm::vec4 position;
         position[0] = csfgeom->vertex[3 * v + 0];
         position[1] = csfgeom->vertex[3 * v + 1];
         position[2] = csfgeom->vertex[3 * v + 2];
@@ -310,10 +311,10 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
 
   srand(63546);
-  std::vector<nvmath::vec4f> geometryColors(csf->numGeometries);
+  std::vector<glm::vec4> geometryColors(csf->numGeometries);
   for(int g = 0; g < csf->numGeometries; g++)
   {
-    geometryColors[g] = nvmath::vec4f(nvh::frand(), nvh::frand(), nvh::frand(), 1.0f);
+    geometryColors[g] = glm::vec4(nvh::frand(), nvh::frand(), nvh::frand(), 1.0f);
   }
 
   // nodes
@@ -323,15 +324,15 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
   {
     CSFNode* csfnode = &csf->nodes[n];
 
-    memcpy(m_matrices[n].objectMatrix.get_value(), csfnode->objectTM, sizeof(float) * 16);
-    memcpy(m_matrices[n].worldMatrix.get_value(), csfnode->worldTM, sizeof(float) * 16);
+    memcpy(glm::value_ptr(m_matrices[n].objectMatrix), csfnode->objectTM, sizeof(float) * 16);
+    memcpy(glm::value_ptr(m_matrices[n].worldMatrix), csfnode->worldTM, sizeof(float) * 16);
 
-    m_matrices[n].worldMatrixIT = nvmath::transpose(nvmath::invert(m_matrices[n].worldMatrix));
+    m_matrices[n].worldMatrixIT = glm::transpose(glm::inverse(m_matrices[n].worldMatrix));
 
     if(csfnode->geometryIDX < 0)
       continue;
 
-    m_matrices[n].winding = nvmath::det(m_matrices[n].worldMatrix) > 0 ? 1.0f : -1.0f;
+    m_matrices[n].winding = glm::determinant(m_matrices[n].worldMatrix) > 0 ? 1.0f : -1.0f;
     m_matrices[n].bboxMin = m_bboxes[csfnode->geometryIDX].min;
     m_matrices[n].bboxMax = m_bboxes[csfnode->geometryIDX].max;
 
@@ -365,7 +366,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     object.matrixIndex   = n;
     object.geometryIndex = csfnode->geometryIDX;
 
-    object.faceCCW = nvmath::det(m_matrices[object.matrixIndex].worldMatrix) > 0;
+    object.faceCCW = glm::determinant(m_matrices[object.matrixIndex].worldMatrix) > 0;
 
     object.parts.resize(csfnode->numParts);
     for(uint32_t i = 0; i < uint32_t(csfnode->numParts); i++)
@@ -391,8 +392,8 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
 
   // compute clone move delta based on m_bbox;
 
-  nvmath::vec4f dim = m_bbox.max - m_bbox.min;
-  m_bboxInstanced   = m_bbox;
+  glm::vec4 dim   = m_bbox.max - m_bbox.min;
+  m_bboxInstanced = m_bbox;
 
   int sq      = 1;
   int numAxis = 0;
@@ -429,7 +430,7 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
   {
     int numNodes = csf->numNodes;
 
-    nvmath::vec4f shift = dim * 1.05f;
+    glm::vec4 shift = dim * 1.05f;
 
     float u = 0;
     float v = 0;
@@ -493,15 +494,15 @@ bool CadScene::loadCSF(const char* filename, const LoadConfig& cfg, int clones, 
     // move all world matrices
     for(int n = 0; n < numNodes; n++)
     {
-      MatrixNode& node = m_matrices[n + numNodes * c];
-      node             = m_matrices[n];
-      node.worldMatrix.set_col(3, node.worldMatrix.col(3) + shift);
+      MatrixNode& node    = m_matrices[n + numNodes * c];
+      node                = m_matrices[n];
+      node.worldMatrix[3] = node.worldMatrix[3] + shift;
     }
 
     {
       // patch object matrix of root
-      MatrixNode& node = m_matrices[csf->rootIDX + numNodes * c];
-      node.objectMatrix.set_col(3, node.objectMatrix.col(3) + shift);
+      MatrixNode& node     = m_matrices[csf->rootIDX + numNodes * c];
+      node.objectMatrix[3] = node.objectMatrix[3] + shift;
     }
 
     // clone objects
@@ -634,8 +635,8 @@ void CadScene::buildMeshletTopology(const CSFile* csf)
 
       geom.meshlet.numMeshlets = int(meshletGeometry.meshletDescriptors.size());
 
-      meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, m_bboxes[g].min.vec_array, m_bboxes[g].max.vec_array,
-                                              (const float*)csfgeom->vertex, sizeof(float) * 3);
+      meshletBuilder.buildMeshletEarlyCulling(meshletGeometry, glm::value_ptr(m_bboxes[g].min),
+                                              glm::value_ptr(m_bboxes[g].max), (const float*)csfgeom->vertex, sizeof(float) * 3);
       if(m_cfg.verbose)
       {
 #if MESHLET_ERRORCHECK

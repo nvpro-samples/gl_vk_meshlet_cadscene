@@ -225,7 +225,7 @@
 
 #ifdef __cplusplus
 namespace meshlettest {
-using namespace nvmath;
+using namespace glm;
 #endif
 
 struct SceneData

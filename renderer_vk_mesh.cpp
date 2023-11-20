@@ -25,7 +25,6 @@
 #include <cassert>
 
 #include <nvh/nvprint.hpp>
-#include <nvmath/nvmath_glsltypes.h>
 
 #include "common.h"
 
@@ -178,7 +177,7 @@ private:
       }
 
       {
-        nvmath::uvec4 drawRange;
+        glm::uvec4 drawRange;
         drawRange.x = di.meshlet.offset;
         drawRange.y = di.meshlet.offset + di.meshlet.count - 1;
         drawRange.z = 0;

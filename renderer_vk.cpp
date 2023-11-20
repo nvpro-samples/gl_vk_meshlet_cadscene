@@ -23,8 +23,6 @@
 #include <algorithm>
 #include <cassert>
 
-#include <nvmath/nvmath_glsltypes.h>
-
 #include "common.h"
 
 

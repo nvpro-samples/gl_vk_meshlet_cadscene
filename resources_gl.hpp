@@ -112,7 +112,7 @@ public:
 
   void blitFrame(const FrameConfig& global) override;
 
-  nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
+  glm::mat4 perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
 
   void getStats(CullStats& stats) override;
   void copyStats() const;

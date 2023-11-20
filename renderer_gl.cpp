@@ -22,8 +22,6 @@
 #include "resources_gl.hpp"
 #include <algorithm>
 
-#include <nvmath/nvmath_glsltypes.h>
-
 #include "common.h"
 
 namespace meshlettest {

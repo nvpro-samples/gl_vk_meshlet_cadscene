@@ -209,7 +209,7 @@ public:
   void cmdCopyStats(VkCommandBuffer cmd) const;
   void getStats(CullStats& stats) override;
 
-  nvmath::mat4f perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
+  glm::mat4 perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const override;
 
   //////////////////////////////////////////////////////////////////////////
 

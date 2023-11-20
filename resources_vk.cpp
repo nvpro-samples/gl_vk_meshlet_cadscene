@@ -19,7 +19,7 @@
 
 /* Contact ckubisch@nvidia.com (Christoph Kubisch) for feedback */
 
-#include "backends/imgui_vk_extra.h"
+#include "imgui/backends/imgui_vk_extra.h"
 
 #include "renderer.hpp"
 #include "resources_vk.hpp"
@@ -29,6 +29,7 @@
 #include <nvvk/pipeline_vk.hpp>
 
 #include "nvmeshlet_builder.hpp"
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace meshlettest {
 
@@ -486,7 +487,7 @@ bool ResourcesVK::initPrograms(const std::string& path, const std::string& prepe
     std::string          prefix  = isNV ? "drawmeshlet_nv" : "drawmeshlet_ext";
 
     shaders.mesh      = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, prefix + "_basic.mesh.glsl",
-                                                      "#define USE_TASK_STAGE 0\n");
+                                                           "#define USE_TASK_STAGE 0\n");
     shaders.task_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, prefix + "_basic.mesh.glsl",
                                                            "#define USE_TASK_STAGE 1\n");
     shaders.cull_mesh = m_shaderManager.createShaderModule(VK_SHADER_STAGE_MESH_BIT_NV, prefix + "_cull.mesh.glsl",
@@ -1471,41 +1472,10 @@ void ResourcesVK::synchronize()
   vkDeviceWaitIdle(m_device);
 }
 
-nvmath::mat4f ResourcesVK::perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const
+glm::mat4 ResourcesVK::perspectiveProjection(float fovy, float aspect, float nearPlane, float farPlane) const
 {
-  // vulkan uses DX style 0,1 z clipspace
-
-  nvmath::mat4f M;
-  float         r, l, b, t;
-  float         f = farPlane;
-  float         n = nearPlane;
-
-  t = n * tanf(fovy * nv_to_rad * (0.5f));
-  b = -t;
-
-  l = b * aspect;
-  r = t * aspect;
-
-  M.a00 = (2.0f * n) / (r - l);
-  M.a10 = 0.0f;
-  M.a20 = 0.0f;
-  M.a30 = 0.0f;
-
-  M.a01 = 0.0f;
-  M.a11 = -(2.0f * n) / (t - b);
-  M.a21 = 0.0f;
-  M.a31 = 0.0f;
-
-  M.a02 = (r + l) / (r - l);
-  M.a12 = (t + b) / (t - b);
-  M.a22 = -(f) / (f - n);
-  M.a32 = -1.0f;
-
-  M.a03 = 0.0;
-  M.a13 = 0.0;
-  M.a23 = (f * n) / (n - f);
-  M.a33 = 0.0;
-
+  glm::mat4 M = glm::perspectiveRH_ZO(glm::radians(fovy), aspect, nearPlane, farPlane);
+  M[1][1] *= -1;
   return M;
 }
 

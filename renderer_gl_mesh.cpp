@@ -21,8 +21,6 @@
 #include <algorithm>
 #include <cassert>
 
-#include <nvmath/nvmath_glsltypes.h>
-
 #include "nvmeshlet_builder.hpp"
 #include "renderer.hpp"
 #include "resources_gl.hpp"
