@@ -17,9 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
-// ide.config.nvglslcchip="tu100"
-
 #version 460
 
   #extension GL_GOOGLE_include_directive : enable
@@ -268,7 +265,6 @@ void procAttributes(const uint vert, uint vidx)
 
 void main()
 {
-
 #if NVMESHLET_ENCODING == NVMESHLET_ENCODING_PACKBASIC
 
   // LOAD HEADER PHASE

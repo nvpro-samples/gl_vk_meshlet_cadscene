@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2024 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -213,6 +213,7 @@ public:
 
     glm::vec3 clipPosition = glm::vec3(0.5f);
 #if IS_VULKAN
+    bool     extUseSubgroupOptimization        = true;
     bool     extLocalInvocationVertexOutput    = false;
     bool     extLocalInvocationPrimitiveOutput = false;
     bool     extCompactVertexOutput            = false;
@@ -462,8 +463,7 @@ std::string Sample::getShaderPrepend() const
              + nvh::stringFormat("#define USE_VERTEX_CULL %d\n", m_tweak.useVertexCull ? 1 : 0)
              + nvh::stringFormat("#define USE_BARYCENTRIC_SHADING %d\n",
                                  m_tweak.useFragBarycentrics && m_supportsFragBarycentrics ? 1 : 0)
-             + nvh::stringFormat("#define USE_BARYCENTRIC_SHADING_QUADSHUFFLE %d\n",
-                                 m_tweak.useFragBarycentricQuads ? 1 : 0)
+             + nvh::stringFormat("#define USE_BARYCENTRIC_SHADING_QUADSHUFFLE %d\n", m_tweak.useFragBarycentricQuads ? 1 : 0)
              + nvh::stringFormat("#define USE_BACKFACECULL %d\n", m_tweak.useBackFaceCull ? 1 : 0)
              + nvh::stringFormat("#define USE_CLIPPING %d\n", m_tweak.useClipping ? 1 : 0)
              + nvh::stringFormat("#define USE_STATS %d\n", m_tweak.useStats ? 1 : 0)
@@ -489,6 +489,7 @@ std::string Sample::getShaderPrepend() const
     prepend += nvh::stringFormat("#define EXT_MAX_MESH_WORKGROUP_INVOCATIONS %d\n", m_tweak.extMeshWorkGroupInvocations);
     prepend += nvh::stringFormat("#define EXT_MAX_TASK_WORKGROUP_INVOCATIONS %d\n", m_tweak.extTaskWorkGroupInvocations);
 
+    prepend += nvh::stringFormat("#define EXT_SUBGROUP_OPTIMIZATION %d\n", m_tweak.extUseSubgroupOptimization ? 1 : 0);
 
     // workgroup size is SUBGROUP_SIZE * SUBGROUP_COUNT
     // we want to use as much threads as required to output all vertices/primitives/meshlets
@@ -967,6 +968,8 @@ void Sample::processUI(int width, int height, double time)
 #if IS_VULKAN
     if(m_supportsEXT && ImGui::CollapsingHeader("EXT Mesh Shading Preferences"))
     {
+      ImGui::Checkbox("use specialized shader for \nv/p count == 1/2 x subgroup size", &m_tweak.extUseSubgroupOptimization);
+
       if(ImGui::Button("RESET to implementation DEFAULTS##ext prefs"))
       {
         resetEXTtweaks(true);
@@ -974,8 +977,7 @@ void Sample::processUI(int width, int height, double time)
       ImGui::Checkbox("compact vertex output", &m_tweak.extCompactVertexOutput);
       ImGui::Checkbox("compact primitive output", &m_tweak.extCompactPrimitiveOutput);
       ImGui::Checkbox("local invocation vertex output", &m_tweak.extLocalInvocationVertexOutput);
-      // not really used
-      // ImGui::Checkbox("local invocation primitive output", &m_tweak.extLocalInvocationPrimitiveOutput);
+      ImGui::Checkbox("local invocation primitive output", &m_tweak.extLocalInvocationPrimitiveOutput);
       m_ui.enumCombobox(GUI_THREADS, "mesh workgroup size", &m_tweak.extMeshWorkGroupInvocations);
       m_ui.enumCombobox(GUI_THREADS, "task workgroup size", &m_tweak.extTaskWorkGroupInvocations);
     }
@@ -1086,9 +1088,21 @@ void Sample::processUI(int width, int height, double time)
 #else
       uint subgroupSize = 32;
 #endif
-      for(uint32_t i = 0; i < subgroupSize; i++)
+      static bool asFloat = false;
+      ImGui::Checkbox("asFloat", &asFloat);
+      if(asFloat)
       {
-        ImGui::Text("%2d: %8u %8u %8u", i, stats.debugA[i], stats.debugB[i], stats.debugC[i]);
+        for(uint32_t i = 0; i < subgroupSize; i++)
+        {
+          ImGui::Text("%2d: %f %f %f", i, *(float*)&stats.debugA[i], *(float*)&stats.debugB[i], *(float*)&stats.debugC[i]);
+        }
+      }
+      else
+      {
+        for(uint32_t i = 0; i < subgroupSize; i++)
+        {
+          ImGui::Text("%2d: %8u %8u %8u", i, stats.debugA[i], stats.debugB[i], stats.debugC[i]);
+        }
       }
     }
   }
@@ -1121,12 +1135,13 @@ void Sample::think(double time)
   if(m_windowState.onPress(KEY_R) || tweakChanged(m_tweak.useBackFaceCull) || tweakChanged(m_tweak.useClipping)
      || tweakChanged(m_tweak.useStats) || tweakChanged(m_tweak.showBboxes) || tweakChanged(m_tweak.showNormals)
      || tweakChanged(m_tweak.showCulled) || tweakChanged(m_tweak.showPrimIDs) || tweakChanged(m_tweak.numTaskMeshlets)
-     || tweakChanged(m_tweak.useFragBarycentrics) || tweakChanged(m_tweak.useFragBarycentricQuads) || tweakChanged(m_tweak.useVertexCull)
+     || tweakChanged(m_tweak.useFragBarycentrics) || tweakChanged(m_tweak.useFragBarycentricQuads)
+     || tweakChanged(m_tweak.useVertexCull)
 #if IS_VULKAN
      || tweakChanged(m_tweak.extMeshWorkGroupInvocations) || tweakChanged(m_tweak.extTaskWorkGroupInvocations)
      || tweakChanged(m_tweak.extCompactPrimitiveOutput) || tweakChanged(m_tweak.extCompactVertexOutput)
      || tweakChanged(m_tweak.extLocalInvocationPrimitiveOutput) || tweakChanged(m_tweak.extLocalInvocationVertexOutput)
-     || tweakChanged(m_tweak.subgroupSize)
+     || tweakChanged(m_tweak.subgroupSize) || tweakChanged(m_tweak.extUseSubgroupOptimization)
 #endif
      || modelConfigChanged(m_modelConfig.extraAttributes) || modelConfigChanged(m_modelConfig.meshPrimitiveCount)
      || modelConfigChanged(m_modelConfig.meshVertexCount) || m_shaderprepend != m_lastShaderPrepend)

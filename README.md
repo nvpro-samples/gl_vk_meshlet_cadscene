@@ -49,6 +49,7 @@ If `VK_EXT_mesh_shader` is supported, this menu is available and allows to influ
 
 Mesh shaders are very sensitive to implementation specific behavior, and ideally these preferences help to get better performance. The values can be queried from the device via `VkPhysicalDeviceMeshShaderPropertiesEXT`. The shaders implicitly try to make use of **local invocation primitive output**, hence the option is not directly exposed here. The UI gives the opportunity to override the vendor's preferences and inspect what the performance behavior is. Except for the workgroup sizes, these preferences affect mostly the complex scenario of per-primitive culling. Be aware that the values returned in `VkPhysicalDeviceMeshShaderPropertiesEXT`, might change with new driver versions, even on the same hardware.
 
+- **use specialized shader**: Use a more optimized shader when per-primitive culling is active. This depends on the configurations of meshlet sizes and subgroup sizes.
 - **RESET to implementation DEFAULTS**: As the name suggests, the following values are reset to those queried from the device.
 - **compact vertex output**: The local vertices in the meshlet are packed tightly and only those that survive culling (if done) are using the `[0 ... vertexCount-1]` entries.
 - **compact primitive output**: The local primitives in the meshlet are packed tightly and only those that survive culling (if done) are using the `[0 ... primitiveCount-1]` entries.
@@ -294,15 +295,22 @@ Vendors may however have different preferences on how exactly to do the per-prim
 how many threads to use (at the time of writing current NV hardware preferred a single warp (== subgroup of 32 threads)).
 Because of that some meshlet configurations may work better on some vendors then others.
 
-## Performance for EXT_mesh_shader (September 2022)
+## Performance for EXT_mesh_shader (September 2022, January 2024)
 
-At the time of the release, the drivers with `EXT_mesh_shader` may not be as fast as `NV_mesh_shader`. While performance is expected to improve over time, the lack of read & write access to outputs in `EXT_mesh_shader` makes the per-primitive culling using shared memory slower than the equivalent in `NV_mesh_shader` not requiring shared memory. However, we do hope to close the gap between the two.
+At the time of the release, the drivers with `EXT_mesh_shader` may not be as fast as `NV_mesh_shader`. While performance is expected to improve over time, the lack of read & write access to outputs in `EXT_mesh_shader` makes the per-primitive culling using shared memory slower than the equivalent in `NV_mesh_shader` not requiring shared memory.
+
+Therefore, for per-primitive culling we recommend to look at this shader variant [`drawmeshlet_ext_scull.mesh.glsl`](drawmeshlet_ext_scull.mesh.glsl) which avoids shared memory as well. It will only work for
+meshlets set to use vertex or primitive counts being 32 or 64, as well as subgroup sizes of 32 or 64.
 
 # Task Shader Overhead
 
-Whenever there is multiple stages evolved, the hardware has to load balance creating warps for the different stages. When there is very little work per drawcall, adding more stages at the top can impact performance negatively on current hardware. As a result we only use the task shader where there were more than 16 meshlets per drawcall (empiric threshold).
+Whenever there is multiple stages evolved, the hardware has to load balance creating warps for the different stages. 
 
-The other option (not yet used in this sample) is to batch drawcalls with few meshlets into bigger drawcalls, so that the task shader stage becomes more effective again. Task shaders can serve as alternative to instancing/multi-draw-indirect as they can dispatch mesh shaders in a distributed matter.
+## Too little work for task shader stage
+
+When there is very little work per drawcall, adding more stages at the top can impact performance negatively on current hardware. As a result we only use the task shader where there were more than 16 meshlets per drawcall (empiric threshold).
+
+The other option (not used in this sample) is to batch drawcalls with few meshlets into bigger drawcalls, so that the task shader stage becomes more effective again. Task shaders can serve as alternative to instancing/multi-draw-indirect as they can dispatch mesh shaders in a distributed matter.
 
 Especially in models with many small objects, such a technique is highly recommended (e.g. low-complexity furniture/properties in architectural visualization, nuts and bolts, guardrails etc.)
 
@@ -353,6 +361,10 @@ uint getDrawID()
 
 At the cost of some additional latency you can extend this to a total of `32 * 32` batched drawcalls, by doing the search in two iterations (first compare against every 32nd element, then the subrange).
 
+## Too much work for task shader stage
+
+There is also the opposite, that if the task-shader becomes too complex (lots of work involving memory loads, shared memory etc.) it has negative performance impacts as well. At that point it is better to use a dedicated compute shader pass.
+
 # Building
 Make sure to have installed the [Vulkan-SDK](http://lunarg.com/vulkan-sdk/) (1.1.85.0 or higher). Always use 64-bit build configurations.
 
@@ -371,11 +383,13 @@ If no argument is provided the default demo scenes are available and can be alte
 
 On some drivers there may be issues with the hw barycentrics in OpenGL not rendering the correct result.
 
-Some combinations of shaderc and NVIDIA driver versions cause the application to hang on `VK_EXT_mesh_shader` usage, use the `-noextmeshshader` commandline option to disable it, and only run with support for `VK_NV_mesh_shader`
+Some combinations of old shaderc and old NVIDIA driver versions cause the application to hang on `VK_EXT_mesh_shader` usage, use the `-noextmeshshader` commandline option to disable it, and only run with support for `VK_NV_mesh_shader`
 
 # History
 
-Major releases
+Major feature releases
+- January 2024
+  - added `EXT_SUBGROUP_OPTIMIZATION` / tweakable that triggers `drawmeshlet_ext_scull.mesh.glsl` which uses shuffle rather than shared memory for everything (only works with meshlet vertex or primitive counts being 32 or 64 and subgroup size being 32 or 64). This was motivated from [a blog post by Hans-Kristian `the maister` Arntzen](https://themaister.net/blog/2024/01/17/modernizing-granites-mesh-rendering/) to attempt a version without shared memory.
 - November 2023
   - added `USE_BARYCENTRIC_SHADING_QUADSHUFFLE` to fragment shaders.
 - September 2022

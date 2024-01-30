@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2017-2022 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2024 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -95,7 +95,7 @@
 // Use degenerate or ideally gl_CullPrimitiveEXT to mark culled
 // primitives.
 #ifndef EXT_COMPACT_PRIMITIVE_OUTPUT
-#define EXT_COMPACT_PRIMITIVE_OUTPUT 0
+#define EXT_COMPACT_PRIMITIVE_OUTPUT 1
 #endif
 
 // hardware specific preferences
@@ -113,6 +113,11 @@
 
 #ifndef EXT_TASK_SUBGROUP_SIZE
 #define EXT_TASK_SUBGROUP_SIZE 32
+#endif
+
+// specialization for 32/64 meshlet sizes and subgroups
+#ifndef EXT_SUBGROUP_OPTIMIZATION
+#define EXT_SUBGROUP_OPTIMIZATION 0
 #endif
 
 // We want to maximize the number of available threads to ideally

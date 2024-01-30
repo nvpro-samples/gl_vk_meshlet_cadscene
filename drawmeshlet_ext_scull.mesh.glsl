@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2016-2024 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
-#version 460
+// This shader is currently not used stand-alone
+// but used conditionally be `drawmeshlet_ext_cull.mesh.glsl`.
+// Though it can be made stand-alone easily.
+//
+// It is an optimized version of `drawmeshlet_ext_cull.mesh.glsl`
+// for the vertex and/or triangle counts being 32 or 64 as well
+// as the subgroup size being 32 or 64.
+//
+// It does not use shared memory, but uses shuffle instead to
+// handle re-ordering of data. Such variables will be stored
+// in "temp" variables as registers.
 
-  #extension GL_GOOGLE_include_directive : enable
-  #extension GL_EXT_control_flow_attributes: require
-  #define UNROLL_LOOP [[unroll]]
-  
-#if (EXT_MESH_SUBGROUP_COUNT == 1 && (NVMESHLET_VERTEX_COUNT == 64 ||  NVMESHLET_VERTEX_COUNT == 32) && (NVMESHLET_PRIMITIVE_COUNT == 64 ||  NVMESHLET_PRIMITIVE_COUNT == 32)) && EXT_SUBGROUP_OPTIMIZATION
-  #include "drawmeshlet_ext_scull.mesh.glsl"
-#else
 
 #include "config.h"
 
@@ -38,10 +41,15 @@
 
   #extension GL_EXT_shader_explicit_arithmetic_types_int8  : require
   #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+  #extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+  #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+  #extension GL_EXT_shader_subgroup_extended_types_int64 : require
   
   #extension GL_KHR_shader_subgroup_basic : require
   #extension GL_KHR_shader_subgroup_ballot : require
   #extension GL_KHR_shader_subgroup_vote : require
+  #extension GL_KHR_shader_subgroup_shuffle : require
+  #extension GL_KHR_shader_subgroup_arithmetic : require
 
 //////////////////////////////////////
 
@@ -49,6 +57,17 @@
 
 //////////////////////////////////////////////////
 // MESH CONFIG
+
+#if EXT_MESH_SUBGROUP_COUNT != 1
+#error "EXT_MESH_SUBGROUP_COUNT must be 1 in this shader"
+#endif
+#if !(NVMESHLET_VERTEX_COUNT == 64 ||  NVMESHLET_VERTEX_COUNT == 32)
+#error "NVMESHLET_VERTEX_COUNT must be 32 or 64 in this shader"
+#endif
+#if !(NVMESHLET_PRIMITIVE_COUNT == 64 ||  NVMESHLET_PRIMITIVE_COUNT == 32)
+#error "NVMESHLET_PRIMITIVE_COUNT must be 32 or 64 in this shader"
+#endif
+
 
 // see Sample::getShaderPrepend() how these are computed
 const uint WORKGROUP_SIZE = EXT_MESH_SUBGROUP_COUNT * EXT_MESH_SUBGROUP_SIZE;
@@ -105,11 +124,12 @@ const uint MESHLET_PRIMITIVE_ITERATIONS = ((NVMESHLET_PRIMITIVE_COUNT + WORKGROU
 // mostly used to detect if no compactiong is active at all, then we will pre-allocate similar to basic shader
 #define EXT_USE_ANY_COMPACTION  ((USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT) || EXT_COMPACT_PRIMITIVE_OUTPUT)
 
-// prefer load into shared memory, then work with data in separate pass
+// prefer load into registers, then work with data in separate pass
 // should make sense if a single subgroup has to loop
 #ifndef USE_EARLY_TOPOLOGY_LOAD
 #define USE_EARLY_TOPOLOGY_LOAD  ((EXT_MESH_SUBGROUP_COUNT == 1) && (NVMESHLET_PRIMITIVE_COUNT > EXT_MESH_SUBGROUP_SIZE))
 #endif
+
 
 /////////////////////////////////////
 // UNIFORMS
@@ -148,6 +168,74 @@ const uint MESHLET_PRIMITIVE_ITERATIONS = ((NVMESHLET_PRIMITIVE_COUNT + WORKGROU
 /////////////////////////////////////////////////
 
 #include "nvmeshlet_utils.glsl"
+
+uint findNthBit(uint value, uint n)
+{
+  // from https://stackoverflow.com/a/45487375
+
+  const uint  pop2 = (value & 0x55555555u) + ((value >> 1) & 0x55555555u);
+  const uint  pop4 = (pop2 & 0x33333333u) + ((pop2 >> 2) & 0x33333333u);
+  const uint  pop8 = (pop4 & 0x0f0f0f0fu) + ((pop4 >> 4) & 0x0f0f0f0fu);
+  const uint  pop16 = (pop8 & 0x00ff00ffu) + ((pop8 >> 8) & 0x00ff00ffu);
+  const uint  pop32 = (pop16 & 0x000000ffu) + ((pop16 >> 16) & 0x000000ffu);
+  uint        rank = 0;
+  uint        temp;
+
+  if (n++ >= pop32)
+    return 31; // avoid out of bounds, so report 31 even when not found
+
+  temp = pop16 & 0xffu;
+  /* if (n > temp) { n -= temp; rank += 16; } */
+  rank += ((temp - n) & 256) >> 4;
+  n -= temp & ((temp - n) >> 8);
+
+  temp = (pop8 >> rank) & 0xffu;
+  /* if (n > temp) { n -= temp; rank += 8; } */
+  rank += ((temp - n) & 256) >> 5;
+  n -= temp & ((temp - n) >> 8);
+
+  temp = (pop4 >> rank) & 0x0fu;
+  /* if (n > temp) { n -= temp; rank += 4; } */
+  rank += ((temp - n) & 256) >> 6;
+  n -= temp & ((temp - n) >> 8);
+
+  temp = (pop2 >> rank) & 0x03u;
+  /* if (n > temp) { n -= temp; rank += 2; } */
+  rank += ((temp - n) & 256) >> 7;
+  n -= temp & ((temp - n) >> 8);
+
+  temp = (value >> rank) & 0x01u;
+  /* if (n > temp) rank += 1; */
+  rank += ((temp - n) & 256) >> 8;
+
+  return rank;
+}
+
+uint findNthBit(uint64_t v, uint i)
+{
+  uvec2 v2 = unpackUint2x32(v);
+  uint s = v2.x;
+  uint o = 0;
+  uint bc = bitCount(v2.x);
+  if (i >= bc) {
+    i -= bc;
+    o += 32;
+    s = v2.y;
+  }
+  
+  return findNthBit(s, i) + o;
+}
+
+uint myBitCount(uint32_t v)
+{
+  return bitCount(v);
+}
+
+uint myBitCount(uint64_t v)
+{
+  uvec2 v2 = unpackUint2x32(v);
+  return bitCount(v2.x) + bitCount(v2.y);
+}
 
 /////////////////////////////////////////////////
 // MESH INPUT
@@ -234,14 +322,14 @@ vec4 getExtra( uint vidx, uint xtra ){
 #endif
 
 // HW_TEMPVERTEX
-// defines how much information we store in shared memory
-// for the vertices. We need them in shared memory so
+// defines how much information we store in temp registers
+// for the vertices. We need them in temp registers so
 // that primitive culling can access all vertices a
-// primitive uses.
+// primitive uses via shuffle.
 // One big difference to NV code is that EXT does not
 // allow read-access to output data
 
-// store screen position, use less shared memory and 
+// store screen position, use less temp registers and 
 // speeds up primitive culling, but may need to 
 // re-fetch/transform vertex position again.
 #define HW_TEMPVERTEX_SPOS 0
@@ -253,7 +341,7 @@ vec4 getExtra( uint vidx, uint xtra ){
 
 #if EXT_USE_ANY_COMPACTION
   // experiment with what store type is quicker
-  #define HW_TEMPVERTEX  HW_TEMPVERTEX_SPOS
+  #define HW_TEMPVERTEX  HW_TEMPVERTEX_WPOS
 #else
   // without compaction
   // always use smallest here, as vertex wpos
@@ -275,68 +363,153 @@ struct TempVertex
 
 // as this shader alywas does per-primitive culling
 // we need to able to fetch the vertex screen positions
-shared TempVertex s_tempVertices[NVMESHLET_VERTEX_COUNT];
-
-#if EXT_USE_ANY_COMPACTION
-// when we do any form of compaction, we will need a working
-// set of primitives in shared memory, otherwise we can straight
-// write to final outputs
-shared u8vec4     s_tempPrimitives[NVMESHLET_PRIMITIVE_COUNT];
-#endif
-
-#if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT
-// for compacted vertices we also need to re-index the local
-// triangle indices, from old vertex index to output vertex index
-shared uint8_t    s_remapVertices[NVMESHLET_VERTEX_COUNT];
-#endif
-
-#if EXT_MESH_SUBGROUP_COUNT > 1
-// if more than one subgroup is used, we need to sync total
-// number of outputs via shared memory
-shared uint s_outPrimCount;
-shared uint s_outVertCount;
-#endif
+TempVertex tempVertices[MESHLET_VERTEX_ITERATIONS];
 
 #if USE_VERTEX_CULL
+
+#if NVMESHLET_VERTEX_COUNT == 64
+  #define vertexBits_t uint64_t
+#else
+  #define vertexBits_t uint
+#endif
+
+  vertexBits_t tempVertexUsed = 0;
 
   // we encode vertex usage in the highest bit of vidx
   // assuming it is available
 
   bool vertexcull_isVertexUsed(uint vert)
   {
-    return (s_tempVertices[vert].vidx & (1<<31)) != 0;
+    return (tempVertexUsed & (vertexBits_t(1) << vert)) != 0;
+  }
+  
+  uint vertexcull_postCompactIndex(uint vert)
+  {
+    return uint(myBitCount(tempVertexUsed & ((vertexBits_t(1) << vert)-1)));
+  }
+  
+  uint vertexcull_preCompactIndex(uint overt)
+  {
+    return findNthBit(tempVertexUsed, overt);
   }
 
-  void vertexcull_setVertexUsed(uint vert) {
+  void vertexcull_setVertexUsed(uint a) {
     // non-atomic write as read/write hazard should not be
     // an issue here, this function will always just
     // add the topmost bit
-    s_tempVertices[vert].vidx |= (1<<31);
+    tempVertexUsed |= vertexBits_t(1) << a;
   }
   
-  uint vertexcull_readVertexIndex(uint vert) {
-    return (s_tempVertices[vert].vidx & ((1<<31)-1));
-  }
-  
-#elif EXT_USE_ANY_COMPACTION
-
-  uint vertexcull_readVertexIndex(uint vert) {
-    return s_tempVertices[vert].vidx;
-  }
-
 #endif
+  
+#if USE_VERTEX_CULL || EXT_USE_ANY_COMPACTION
+  uint vertexcull_readVertexIndex(uint vert) {
+    #if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
+      #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_VERTEX_COUNT
+        return subgroupShuffle(tempVertices[0].vidx, vert);
+      #elif EXT_MESH_SUBGROUP_SIZE == 32
+        uint lo = subgroupShuffle(tempVertices[0].vidx, vert & 31);
+        uint hi = subgroupShuffle(tempVertices[1].vidx, vert & 31);
+      
+        return vert < 32 ? lo : hi;
+      #endif
+    #else
+      #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_VERTEX_COUNT
+        return tempVertices[0].vidx;
+      #else
+        return vert < 32 ? tempVertices[0].vidx : tempVertices[1].vidx;
+      #endif
+    #endif
+  }
+  
+#endif
+
+  uint tempTopologies[MESHLET_PRIMITIVE_ITERATIONS];
+
+#if NVMESHLET_PRIMITIVE_COUNT == 64
+  #define primBits_t uint64_t
+#else
+  #define primBits_t uint
+#endif
+
+  primBits_t tempPrimUsed = 0;
+
+  uint primcull_preCompactIndex(uint overt)
+  {
+    return findNthBit(tempPrimUsed, overt);
+  }
+  
+  uint primcull_getTopology(uint idx)
+  {
+    #if EXT_COMPACT_PRIMITIVE_OUTPUT && EXT_LOCAL_INVOCATION_PRIMITIVE_OUTPUT
+      #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_PRIMITIVE_COUNT
+        return subgroupShuffle(tempTopologies[0], idx);
+      #else
+        uint lo = subgroupShuffle(tempTopologies[0], idx & 31);
+        uint hi = subgroupShuffle(tempTopologies[1], idx & 31);
+      
+        return idx < 32 ? lo : hi;
+      #endif
+    #else
+      #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_PRIMITIVE_COUNT
+        return tempTopologies[0];
+      #else
+        return idx < 32 ? tempTopologies[0] : tempTopologies[1];
+      #endif
+    #endif
+  }
+
   
 #if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
   vec2 primcull_getVertexSPos(uint vert) {
-    return s_tempVertices[vert].sPos;
+    #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_VERTEX_COUNT
+      return subgroupShuffle(tempVertices[0].sPos, vert);
+    #else
+      vec2 lo = subgroupShuffle(tempVertices[0].sPos, vert & 31);
+      vec2 hi = subgroupShuffle(tempVertices[1].sPos, vert & 31);
+    
+      return vert < 32 ? lo : hi;
+    #endif
   }
 #elif HW_TEMPVERTEX == HW_TEMPVERTEX_WPOS
   vec4 primcull_getVertexHPos(uint vert) {
-    return (scene.viewProjMatrix * vec4(s_tempVertices[vert].wPos,1));
+    #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_VERTEX_COUNT
+      vec3 wPos = subgroupShuffle(tempVertices[0].wPos, vert);
+    #else
+      vec3 lo = subgroupShuffle(tempVertices[0].wPos, vert & 31);
+      vec3 hi = subgroupShuffle(tempVertices[1].wPos, vert & 31);
+    
+      vec3 wPos = vert < 32 ? lo : hi;
+    #endif
+    
+    return (scene.viewProjMatrix * vec4(wPos,1));
   }
+  #if EXT_USE_ANY_COMPACTION
+  vec3 primcull_getVertexWPos(uint vert) {
+    #if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
+      #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_VERTEX_COUNT
+        vec3 wPos = subgroupShuffle(tempVertices[0].wPos, vert);
+      #else
+        vec3 lo = subgroupShuffle(tempVertices[0].wPos, vert & 31);
+        vec3 hi = subgroupShuffle(tempVertices[1].wPos, vert & 31);
+      
+        vec3 wPos = vert < 32 ? lo : hi;
+      #endif
+    #else
+      #if EXT_MESH_SUBGROUP_SIZE == NVMESHLET_VERTEX_COUNT
+        vec3 wPos = tempVertices[0].wPos;
+      #else
+        vec3 wPos = vert < 32 ? tempVertices[0].wPos : tempVertices[1].wPos;
+      #endif
+    #endif
+     
+    return wPos;
+  }
+  #endif
 #else
   #error "HW_TEMPVERTEX not supported"
 #endif
+
 
 //////////////////////////////////////////////////
 // VERTEX EXECUTION
@@ -355,14 +528,36 @@ shared uint s_outVertCount;
 void writeTempVertex(uint vert, const uint vidx, vec3 wPos, vec4 hPos)
 {
 #if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
-  s_tempVertices[vert].sPos = getScreenPos(hPos);
+  vec2 sPos = getScreenPos(hPos);
+#endif
+
+#if EXT_MESH_SUBGROUP_SIZE != NVMESHLET_VERTEX_COUNT
+  if (vert < 32) {
+#endif
+#if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
+  tempVertices[0].sPos = sPos;
 #elif HW_TEMPVERTEX == HW_TEMPVERTEX_WPOS
-  s_tempVertices[vert].wPos = wPos;
+  tempVertices[0].wPos = wPos;
 #else
   #error "HW_TEMPVERTEX not supported"
 #endif
 #if USE_VERTEX_CULL || EXT_USE_ANY_COMPACTION
-  s_tempVertices[vert].vidx = vidx;
+  tempVertices[0].vidx = vidx;
+#endif
+#if EXT_MESH_SUBGROUP_SIZE != NVMESHLET_VERTEX_COUNT
+  }
+  else {
+#if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
+  tempVertices[1].sPos = sPos;
+#elif HW_TEMPVERTEX == HW_TEMPVERTEX_WPOS
+  tempVertices[1].wPos = wPos;
+#else
+  #error "HW_TEMPVERTEX not supported"
+#endif
+#if USE_VERTEX_CULL || EXT_USE_ANY_COMPACTION
+  tempVertices[1].vidx = vidx;
+#endif
+  }
 #endif
 }
 
@@ -373,35 +568,22 @@ void procTempVertex(uint vert, const uint vidx)
   vec3 wPos = (object.worldMatrix  * vec4(oPos,1)).xyz;
   vec4 hPos = (scene.viewProjMatrix * vec4(wPos,1));
   
-  // only early out if we could make out-of-bounds write
-  if ((WORKGROUP_SIZE * MESHLET_VERTEX_ITERATIONS > NVMESHLET_VERTEX_COUNT) && vert >= NVMESHLET_VERTEX_COUNT) return;
-  
   writeTempVertex(vert, vidx, wPos, hPos);
 }
 #endif
 
-void procVertex(uint vert, const uint vidx)
+void procVertex(uint vert, const uint vidx, vec3 inWPos)
 {
 #if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS || !EXT_USE_ANY_COMPACTION
   vec3 oPos = getPosition(vidx);
   vec3 wPos = (object.worldMatrix  * vec4(oPos,1)).xyz;
 #elif HW_TEMPVERTEX == HW_TEMPVERTEX_WPOS
-  vec3 wPos = s_tempVertices[vert].wPos;
+  vec3 wPos = inWPos;
 #else
   #error "HW_TEMPVERTEX not supported"
 #endif
   vec4 hPos = (scene.viewProjMatrix * vec4(wPos,1));
   
-  uint inVert = vert;
-  
-#if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && !EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
-  // write to a different output location
-  vert = s_remapVertices[vert];
-#endif
-  
-  // only early out if we could make out-of-bounds write
-  if ((WORKGROUP_SIZE * MESHLET_VERTEX_ITERATIONS > NVMESHLET_VERTEX_COUNT) && vert >= NVMESHLET_VERTEX_COUNT) return;
-
   gl_MeshVerticesEXT[vert].gl_Position = hPos;
 
 #if !SHOW_PRIMIDS
@@ -447,14 +629,6 @@ void procAttributes(uint vert, const uint vidx)
   vec3 oNormal = getNormal(vidx);
   vec3 wNormal = mat3(object.worldMatrixIT) * oNormal;
   
-#if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && !EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
-  // write to a different output location
-  vert = s_remapVertices[vert];
-#endif
-  
-  // only early out if we could make out-of-bounds write
-  if ((WORKGROUP_SIZE * MESHLET_VERTEX_ITERATIONS > NVMESHLET_VERTEX_COUNT) && vert >= NVMESHLET_VERTEX_COUNT) return;
-  
   OUT[vert].wNormal = wNormal;
   #if VERTEX_EXTRAS_COUNT
     UNROLL_LOOP
@@ -475,14 +649,6 @@ void procAttributes(uint vert, const uint vidx)
 
 void main()
 {
-#if EXT_MESH_SUBGROUP_COUNT > 1
-  if (laneID == 0)
-  {
-    s_outVertCount  = 0;
-    s_outPrimCount = 0;
-  }
-#endif
-
 #if NVMESHLET_ENCODING == NVMESHLET_ENCODING_PACKBASIC
 
   // LOAD HEADER PHASE
@@ -541,7 +707,7 @@ void main()
       #else
           // process our vertex in full, as we need it for
           // culling anyway
-          procVertex(vert, vidx);
+          procVertex(vert, vidx, vec3(0,0,0));
         #if !USE_VERTEX_CULL
           // without vertex culling just write
           // out all attributes immediately
@@ -573,9 +739,7 @@ void main()
                                primIndices_u8[readBegin + primRead * 3 + 2],
                                uint8_t(prim));
     
-      if (prim <= primMax) {
-        s_tempPrimitives[prim] = topology;
-      }
+      tempTopologies[i] = pack32(topology);
     }
   #endif
   }
@@ -587,21 +751,16 @@ void main()
   ////////////////////////////////////////////
   // PRIMITIVE CULLING PHASE
   
-  memoryBarrierShared();
   barrier();
   
   // for pipelining the index loads it is actually faster to load
   // the primitive indices first, and then do the culling loop here,
   // rather than combining load / culling. This behavior, however, 
   // could vary per vendor.
-  
-  uint outPrimCount = 0;
+
 #if !(EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
   uint readBegin = primStart * 4;
-  u8vec4 iterated_topologies[MESHLET_PRIMITIVE_ITERATIONS];
-#endif
-#if EXT_USE_ANY_COMPACTION && !EXT_COMPACT_PRIMITIVE_OUTPUT && HW_CULL_PRIMITIVE
-  bool iterated_primVisible[MESHLET_PRIMITIVE_ITERATIONS];
+
 #endif
   
   UNROLL_LOOP
@@ -614,15 +773,7 @@ void main()
     u8vec4 topology;
     
   #if (EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
-    if (prim <= primMax) {
-      uint idx = prim * 3;
-      topology = s_tempPrimitives[prim];
-    }
-    #if EXT_MESH_SUBGROUP_COUNT > 1 && EXT_COMPACT_PRIMITIVE_OUTPUT
-      // when we compact we will write topology to a new location in
-      // s_tempPrimitives, so must ensure all threads have read the topology register properly
-      barrier();
-    #endif
+    topology = unpack8(tempTopologies[i]);
   #else
     uint primRead = min(prim, primMax);
     topology = u8vec4(primIndices_u8[readBegin + primRead * 3 + 0],
@@ -630,8 +781,12 @@ void main()
                       primIndices_u8[readBegin + primRead * 3 + 2],
                       uint8_t(prim));
   #endif
-
-    if (prim <= primMax) {
+    if (prim > primMax) {
+      topology = u8vec4(0);
+    }
+    
+    // these read via shuffle, cannot be in branch
+    
     #if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
       vec2 as = primcull_getVertexSPos(topology.x);
       vec2 bs = primcull_getVertexSPos(topology.y);
@@ -646,7 +801,8 @@ void main()
       vec2 bs = getScreenPos(bh);
       vec2 cs = getScreenPos(ch);
     #endif
-
+    
+    if (prim <= primMax) {
     #if USE_MESH_FRUSTUMCULL && HW_TEMPVERTEX != HW_TEMPVERTEX_SPOS && USE_CULLBITS
       // if the task-shader is active and does the frustum culling
       // then we normally don't execute this here
@@ -656,13 +812,25 @@ void main()
 
       primVisible = testTriangle(as.xy, bs.xy, cs.xy, 1.0, abits, bbits, cbits);
     #elif USE_MESH_FRUSTUMCULL
+    
       // the simple viewport culling here only does 2D check
       primVisible = testTriangle(as.xy, bs.xy, cs.xy, 1.0, true);
     #else
+      
       // assumes all heavy lifting on frustum culling is done before
       // either by task-shader or indirect draws etc. (not used in this sample)
       primVisible = testTriangle(as.xy, bs.xy, cs.xy, 1.0, false);
     #endif
+    
+
+      if (primVisible) {
+      #if USE_VERTEX_CULL
+        vertexcull_setVertexUsed(topology.x);
+        vertexcull_setVertexUsed(topology.y);
+        vertexcull_setVertexUsed(topology.z);
+      #endif
+      }
+    
       
     #if !EXT_USE_ANY_COMPACTION
       {
@@ -679,118 +847,36 @@ void main()
         gl_MeshPrimitivesEXT[prim].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + uint(topology.w));
       #endif
       }
-    #else
-      #if !EXT_COMPACT_PRIMITIVE_OUTPUT && !HW_CULL_PRIMITIVE
-        if (!primVisible) {
-          s_tempPrimitives[prim] = u8vec4(0);
-        }
-      #endif
-      #if !(EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
-        iterated_topologies[i] = primVisible ? topology : u8vec4(0);
-      #endif
-      #if !EXT_COMPACT_PRIMITIVE_OUTPUT && HW_CULL_PRIMITIVE
-        iterated_primVisible[i] = primVisible;
-      #endif
-    #endif
-
-    #if USE_VERTEX_CULL
-      if (primVisible) {
-        vertexcull_setVertexUsed(topology.x);
-        vertexcull_setVertexUsed(topology.y);
-        vertexcull_setVertexUsed(topology.z);
-      }
+    #elif (!USE_EARLY_TOPOLOGY_LOAD)
+      tempTopologies[i] = pack32(topology);
     #endif
     }
+    
 
-  #if EXT_COMPACT_PRIMITIVE_OUTPUT || USE_STATS
+  #if EXT_COMPACT_PRIMITIVE_OUTPUT || USE_VERTEX_CULL || USE_STATS
     {
       uvec4 votePrims = subgroupBallot(primVisible);
-      uint  numPrims  = subgroupBallotBitCount(votePrims);
-      
-    #if EXT_MESH_SUBGROUP_COUNT > 1
-      if (gl_SubgroupInvocationID == 0) {
-        outPrimCount = atomicAdd(s_outPrimCount, numPrims);
-      }
-      outPrimCount = subgroupBroadcastFirst(outPrimCount);
-    #endif
-      
-    #if EXT_COMPACT_PRIMITIVE_OUTPUT
-      uint  idxOffset = subgroupBallotExclusiveBitCount(votePrims) + outPrimCount;
-      if (primVisible) {
-        s_tempPrimitives[idxOffset] = topology;
-      }
-    #endif
-    #if EXT_MESH_SUBGROUP_COUNT == 1
-      outPrimCount += numPrims;
+    #if NVMESHLET_PRIMITIVE_COUNT == 64 && EXT_MESH_SUBGROUP_SIZE == 64
+      tempPrimUsed = packUint2x32(votePrims.xy); 
+    #elif NVMESHLET_PRIMITIVE_COUNT == 64 && EXT_MESH_SUBGROUP_SIZE == 32
+      tempPrimUsed |= primBits_t(votePrims.x) << (i*32);
+    #else
+      tempPrimUsed = votePrims.x; 
     #endif
     }
   #endif
   }
   
+  tempPrimUsed = subgroupOr(tempPrimUsed);
+  uint outPrimCount = myBitCount(tempPrimUsed);
+
   
-#if USE_VERTEX_CULL && (EXT_COMPACT_VERTEX_OUTPUT || USE_STATS)
+#if USE_VERTEX_CULL
   ////////////////////////////////////////////
   // VERTEX COMPACTION PHASE
   
-  memoryBarrierShared();
-  barrier();
-  
-  uint outVertCount = 0;
-  {
-    UNROLL_LOOP
-    for (uint i = 0; i < uint(MESHLET_VERTEX_ITERATIONS); i++) {
-      uint vert = laneID + i * WORKGROUP_SIZE;
-      bool used = vert <= vertMax && vertexcull_isVertexUsed( vert );
-      
-    #if EXT_COMPACT_VERTEX_OUTPUT && EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
-      // ensure vtx is in register before we start
-      // writing it into another shared memory location 
-      // after compaction
-      #if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
-        // only vidx matters
-        uint vidx;
-        if (used) vidx = s_tempVertices[vert].vidx;
-      #else
-        TempVertex vtx;
-        if (used) vtx = s_tempVertices[vert];
-      #endif
-      #if EXT_MESH_SUBGROUP_COUNT > 1
-        barrier();
-      #endif
-    #endif
-
-      uvec4 voteVerts = subgroupBallot(used);
-      uint  numVerts  = subgroupBallotBitCount(voteVerts);
-      
-    #if EXT_MESH_SUBGROUP_COUNT > 1
-      if (gl_SubgroupInvocationID == 0) {
-        outVertCount = atomicAdd(s_outVertCount, numVerts);
-      }
-      outVertCount = subgroupBroadcastFirst(outVertCount);
-    #endif
-      
-    #if EXT_COMPACT_VERTEX_OUTPUT
-      uint  idxOffset = subgroupBallotExclusiveBitCount(voteVerts) + outVertCount;   
-      if (used) {
-        #if EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
-          #if HW_TEMPVERTEX == HW_TEMPVERTEX_SPOS
-            // only vidx matters
-            s_tempVertices[idxOffset].vidx = vidx;
-          #else
-            s_tempVertices[idxOffset] = vtx;
-          #endif
-        #endif
-        // we need to fix up the primitive indices
-        // from old vertex index to compacted vertex index
-        s_remapVertices[vert] = uint8_t(idxOffset);
-      }
-    #endif
-      
-    #if EXT_MESH_SUBGROUP_COUNT == 1
-      outVertCount += numVerts;
-    #endif
-    }
-  }
+  tempVertexUsed = subgroupOr(tempVertexUsed);
+  uint outVertCount = myBitCount(tempVertexUsed);
   
 #else
   uint outVertCount = vertCount;
@@ -799,13 +885,7 @@ void main()
   ////////////////////////////////////////////
   // OUTPUT
   
-  memoryBarrierShared();
   barrier();
-  
-  #if EXT_MESH_SUBGROUP_COUNT > 1
-    outVertCount = s_outVertCount;
-    outPrimCount = s_outPrimCount;
-  #endif
 
   if (laneID == 0) {
   #if USE_STATS
@@ -816,6 +896,8 @@ void main()
   #endif
   }
   
+#if EXT_USE_ANY_COMPACTION
+
 #if !EXT_COMPACT_PRIMITIVE_OUTPUT
   outPrimCount = primCount;
 #endif
@@ -823,36 +905,49 @@ void main()
   outVertCount = vertCount;
 #endif
 
-#if EXT_USE_ANY_COMPACTION
-  // OUTPUT ALLOCATION
   SetMeshOutputsEXT(outVertCount, outPrimCount);
-  
-  // OUTPUT TRIANGLES
+
   UNROLL_LOOP
   for (uint i = 0; i < uint(MESHLET_PRIMITIVE_ITERATIONS); i++)
   {
-    uint prim = laneID + i * WORKGROUP_SIZE;
-    if (prim < outPrimCount) {
-    #if EXT_COMPACT_PRIMITIVE_OUTPUT || (EXT_USE_ANY_COMPACTION && USE_EARLY_TOPOLOGY_LOAD)
-      u8vec4 topology = s_tempPrimitives[prim];
+  #if EXT_COMPACT_PRIMITIVE_OUTPUT && !EXT_LOCAL_INVOCATION_PRIMITIVE_OUTPUT
+    uint prim  = laneID + i * WORKGROUP_SIZE;
+    u8vec4 topology = unpack8(tempTopologies[i]);
+    primBits_t primBit = primBits_t(1) << (prim);
+    if ((tempPrimUsed & primBit) != 0)
+    {
+      uint outidx = myBitCount(tempPrimUsed & (primBit-1));
+    
+  #elif EXT_COMPACT_PRIMITIVE_OUTPUT && EXT_LOCAL_INVOCATION_PRIMITIVE_OUTPUT
+    uint outidx = laneID + i * WORKGROUP_SIZE;
+    
+    // must be outside branch when reading via shuffle
+    uint prim = primcull_preCompactIndex(outidx);
+    u8vec4 topology = unpack8(primcull_getTopology(prim));
+    
+    if (outidx < outPrimCount)
+    {
+      
+  #else
+    uint prim  = laneID + i * WORKGROUP_SIZE;
+    u8vec4 topology = unpack8(tempTopologies[i]);
+    primBits_t primBit = primBits_t(1) << (prim);
+    if ((tempPrimUsed & primBit) != 0)
+    {
+      uint outidx = prim;
+  #endif
+    #if EXT_COMPACT_VERTEX_OUTPUT && USE_VERTEX_CULL
+      uvec3 outTopo = uvec3(vertexcull_postCompactIndex(topology.x), vertexcull_postCompactIndex(topology.y), vertexcull_postCompactIndex(topology.z));
     #else
-      u8vec4 topology = iterated_topologies[i];
+      uvec3 outTopo = uvec3(topology.x, topology.y, topology.z);
     #endif
-    #if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT
-      // re-index vertices to new output vertex slots
-      topology.x = s_remapVertices[topology.x];
-      topology.y = s_remapVertices[topology.y];
-      topology.z = s_remapVertices[topology.z];
-    #endif
-    #if !EXT_COMPACT_PRIMITIVE_OUTPUT && HW_CULL_PRIMITIVE
-      gl_MeshPrimitivesEXT[prim].gl_CullPrimitiveEXT = !iterated_primVisible[i];
-    #endif
-      gl_PrimitiveTriangleIndicesEXT[prim] = uvec3(topology.x, topology.y, topology.z);
+    
+      gl_PrimitiveTriangleIndicesEXT[outidx] = outTopo;
     #if SHOW_PRIMIDS
       // let's compute some fake unique primitiveID
-      gl_MeshPrimitivesEXT[prim].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + uint(topology.w));
+      gl_MeshPrimitivesEXT[outidx].gl_PrimitiveID = int((meshletID + geometryOffsets.x) * NVMESHLET_PRIMITIVE_COUNT + uint(topology.w));
     #endif
-    }
+    }  
   }
 #endif
 
@@ -861,22 +956,47 @@ void main()
   UNROLL_LOOP
   for (uint i = 0; i < uint(MESHLET_VERTEX_ITERATIONS); i++)
   {
+  #if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && !EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
     uint vert = laneID + i * WORKGROUP_SIZE;
-  #if USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
-    bool used = vert < outVertCount;
-  #elif USE_VERTEX_CULL
     bool used = vert <= vertMax && vertexcull_isVertexUsed( vert );
+    if (used)
+    {
+      uint overt = vertexcull_postCompactIndex(vert);
+      uint vidx  = vertexcull_readVertexIndex(vert);
+      vec3 wPos  = primcull_getVertexWPos(vert);
+      
+  #elif USE_VERTEX_CULL && EXT_COMPACT_VERTEX_OUTPUT && EXT_LOCAL_INVOCATION_VERTEX_OUTPUT
+    uint overt = laneID + i * WORKGROUP_SIZE;
+    
+    // must be outside branch when reading via shuffle
+    uint vert  = vertexcull_preCompactIndex(overt);
+    uint vidx  = vertexcull_readVertexIndex(vert);
+    vec3 wPos  = primcull_getVertexWPos(vert);
+    
+    if (overt < outVertCount)
+    {
+    
   #else
+    uint vert = laneID + i * WORKGROUP_SIZE;
+    #if USE_VERTEX_CULL
+    bool used = vert <= vertMax && vertexcull_isVertexUsed( vert );
+    #else
     bool used = vert <= vertMax;
-  #endif
-    if (used) {
-      uint vidx = vertexcull_readVertexIndex( vert );
-    #if EXT_USE_ANY_COMPACTION
-      procVertex(vert, vidx);
     #endif
-      procAttributes(vert, vidx);
+    if (used)
+    {
+      uint overt = vert;
+      uint vidx  = vertexcull_readVertexIndex( vert );
+    #if EXT_USE_ANY_COMPACTION
+      vec3 wPos  = primcull_getVertexWPos(vert);
+    #endif
+  #endif
+    
+    #if EXT_USE_ANY_COMPACTION
+      procVertex(overt, vidx, wPos);
+    #endif
+      procAttributes(overt, vidx);
     }
   }
 #endif
 }
-#endif

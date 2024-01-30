@@ -17,9 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
-// ide.config.nvglslcchip="tu100"
-
 #version 450
 
 #ifdef VULKAN
